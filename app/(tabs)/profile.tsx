@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, Settings, HelpCircle } from 'lucide-react-native';
+import { User, LogOut, Settings, CircleHelp as HelpCircle } from 'lucide-react-native';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();

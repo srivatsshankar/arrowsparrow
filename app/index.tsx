@@ -9,6 +9,7 @@ import {
   Platform,
   RefreshControl,
   Modal,
+  Image,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
@@ -337,33 +338,42 @@ export default function LibraryScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <View style={styles.header}>
-          <View style={styles.headerContent}>
-            <View style={styles.headerLeft}>
-              <Text style={styles.title}>Your Library</Text>
-              <Text style={styles.subtitle}>
-                {uploads.length} item{uploads.length !== 1 ? 's' : ''} in your collection
-              </Text>
-            </View>
-            <View style={styles.headerRight}>
-              <TouchableOpacity
-                style={styles.uploadButton}
-                onPress={() => setShowUploadModal(true)}
-                activeOpacity={0.8}
-              >
-                <Plus size={20} color="#FFFFFF" />
-                <Text style={styles.uploadButtonText}>Upload</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.menuButton}
-                onPress={() => setShowDropdownMenu(true)}
-                activeOpacity={0.8}
-              >
-                <Menu size={24} color="#374151" />
-              </TouchableOpacity>
-            </View>
+        {/* Top Navigation Bar */}
+        <View style={styles.topBar}>
+          <View style={styles.logoContainer}>
+            <Image
+              source={{ uri: 'https://images.pexels.com/photos/1181467/pexels-photo-1181467.jpeg?auto=compress&cs=tinysrgb&w=100&h=100&dpr=2' }}
+              style={styles.logoImage}
+            />
+            <Text style={styles.logoText}>Arrow Sparrow</Text>
           </View>
+          
+          <View style={styles.topBarActions}>
+            <TouchableOpacity
+              style={styles.uploadButton}
+              onPress={() => setShowUploadModal(true)}
+              activeOpacity={0.8}
+            >
+              <Plus size={18} color="#FFFFFF" />
+              <Text style={styles.uploadButtonText}>Upload</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.menuButton}
+              onPress={() => setShowDropdownMenu(true)}
+              activeOpacity={0.8}
+            >
+              <Menu size={22} color="#374151" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Library Header */}
+        <View style={styles.libraryHeader}>
+          <Text style={styles.title}>Your Library</Text>
+          <Text style={styles.subtitle}>
+            {uploads.length} item{uploads.length !== 1 ? 's' : ''} in your collection
+          </Text>
         </View>
 
         {uploading && (
@@ -629,25 +639,73 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
   },
-  header: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerContent: {
+  // Top Navigation Bar
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
     paddingTop: 60,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  headerLeft: {
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
   },
-  headerRight: {
+  logoImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 12,
+  },
+  logoText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  topBarActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  uploadButton: {
+    backgroundColor: '#3B82F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  uploadButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  menuButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  // Library Header
+  libraryHeader: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
+    paddingBottom: 20,
   },
   title: {
     fontSize: 28,
@@ -658,30 +716,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6B7280',
-  },
-  uploadButton: {
-    backgroundColor: '#3B82F6',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  uploadButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  menuButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
   },
   uploadingContainer: {
     flexDirection: 'row',

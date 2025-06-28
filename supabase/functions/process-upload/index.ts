@@ -61,7 +61,7 @@ Deno.serve(async (req: Request) => {
         // Process audio with Eleven Labs
         processedText = await processAudioWithElevenLabs(fileUrl, uploadId, supabase);
       } else if (fileType === 'document') {
-        // Process document with simple text extraction
+        // Process document with proper text extraction
         processedText = await processDocumentText(fileUrl, uploadId, supabase);
       }
 
@@ -187,19 +187,36 @@ async function processDocumentText(fileUrl: string, uploadId: string, supabase: 
     }
     
     const docBuffer = await docResponse.arrayBuffer();
+    const fileName = fileUrl.split('/').pop() || 'document';
+    const fileExtension = fileName.split('.').pop()?.toLowerCase();
 
-    // For demonstration, we'll extract basic text
-    // In production, you would integrate with Docling API or similar service
-    const extractedText = `Document processed successfully. File size: ${docBuffer.byteLength} bytes. 
+    let extractedText = '';
 
-This is a placeholder for document text extraction. In a production environment, this would use a service like Docling to extract structured text from PDF/Word documents.
+    if (fileExtension === 'pdf') {
+      extractedText = await extractPDFText(docBuffer);
+    } else if (fileExtension === 'docx') {
+      extractedText = await extractDocxText(docBuffer);
+    } else if (fileExtension === 'doc') {
+      // For .doc files, we'll provide a helpful message
+      extractedText = `This appears to be a legacy Microsoft Word document (.doc format). 
+      
+For better text extraction, please convert your document to:
+- PDF format (.pdf) - recommended for best results
+- Modern Word format (.docx)
+- Plain text format (.txt)
 
-The document has been uploaded and is ready for processing. You can implement actual text extraction by:
-1. Using a PDF parsing library for PDF files
-2. Using a Word document parser for .docx files
-3. Integrating with a document processing API like Docling
+The document has been uploaded successfully, but automatic text extraction is limited for legacy .doc files.`;
+    } else if (fileExtension === 'txt') {
+      // Handle plain text files
+      const textDecoder = new TextDecoder('utf-8');
+      extractedText = textDecoder.decode(docBuffer);
+    } else {
+      throw new Error(`Unsupported file format: ${fileExtension}. Supported formats: PDF, DOCX, TXT`);
+    }
 
-For now, this serves as a demonstration of the document processing workflow.`;
+    if (!extractedText || extractedText.trim().length === 0) {
+      throw new Error('No text could be extracted from the document. The file may be empty, corrupted, or contain only images.');
+    }
 
     // Save extracted text to database
     const { error: insertError } = await supabase
@@ -221,18 +238,105 @@ For now, this serves as a demonstration of the document processing workflow.`;
   }
 }
 
+async function extractPDFText(buffer: ArrayBuffer): Promise<string> {
+  try {
+    // Import PDF parsing library
+    const { getDocument } = await import('npm:pdfjs-dist@4.0.379');
+    
+    // Configure PDF.js for Deno environment
+    const pdfjsLib = { getDocument };
+    
+    // Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+    });
+    
+    const pdf = await loadingTask.promise;
+    let fullText = '';
+    
+    // Extract text from each page
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      
+      // Combine text items from the page
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(' ');
+      
+      if (pageText.trim()) {
+        fullText += `\n\n--- Page ${pageNum} ---\n${pageText}`;
+      }
+    }
+    
+    // Clean up the text
+    fullText = fullText
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .replace(/\n\s*\n/g, '\n\n') // Clean up multiple newlines
+      .trim();
+    
+    if (!fullText) {
+      throw new Error('PDF appears to contain no readable text. It may contain only images or be corrupted.');
+    }
+    
+    return fullText;
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+    throw new Error(`Failed to extract text from PDF: ${error.message}`);
+  }
+}
+
+async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
+  try {
+    // Import mammoth for DOCX parsing
+    const mammoth = await import('npm:mammoth@1.6.0');
+    
+    // Extract text from DOCX
+    const result = await mammoth.extractRawText({ 
+      arrayBuffer: buffer 
+    });
+    
+    if (!result.value || result.value.trim().length === 0) {
+      throw new Error('DOCX file appears to contain no readable text.');
+    }
+    
+    // Clean up the extracted text
+    const cleanText = result.value
+      .replace(/\r\n/g, '\n') // Normalize line endings
+      .replace(/\n\s*\n\s*\n/g, '\n\n') // Clean up excessive newlines
+      .trim();
+    
+    // Log any warnings from mammoth
+    if (result.messages && result.messages.length > 0) {
+      console.log('DOCX extraction warnings:', result.messages);
+    }
+    
+    return cleanText;
+  } catch (error) {
+    console.error('DOCX extraction error:', error);
+    throw new Error(`Failed to extract text from DOCX: ${error.message}`);
+  }
+}
+
 async function processSummaryWithGemini(text: string, uploadId: string, supabase: any): Promise<void> {
   if (!GOOGLE_GEMINI_API_KEY) {
     throw new Error('Google Gemini API key not configured. Please set GOOGLE_GEMINI_API_KEY in your Supabase Edge Function environment variables.');
   }
 
   try {
+    // Truncate text if it's too long for the API
+    const maxLength = 30000; // Conservative limit for Gemini
+    const processedText = text.length > maxLength 
+      ? text.substring(0, maxLength) + '\n\n[Note: Text was truncated due to length limits]'
+      : text;
+
     const prompt = `
       Please analyze the following student coursework text and provide:
-      1. A comprehensive summary
-      2. The most important key points for studying
+      1. A comprehensive summary (2-3 paragraphs)
+      2. The most important key points for studying (5-8 points)
 
-      Text: ${text}
+      Text: ${processedText}
 
       Please format your response as JSON with the following structure:
       {
@@ -242,6 +346,9 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
           {"point": "Second key point", "importance": 4}
         ]
       }
+
+      Make sure the summary captures the main themes and important concepts. 
+      For key points, assign importance levels from 1-5 (5 being most important).
     `;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`, {
@@ -252,7 +359,13 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
       body: JSON.stringify({
         contents: [{
           parts: [{ text: prompt }]
-        }]
+        }],
+        generationConfig: {
+          temperature: 0.3,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        }
       }),
     });
 
@@ -306,7 +419,7 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
       const keyPointsData = analysis.keyPoints.map((kp: any) => ({
         upload_id: uploadId,
         point_text: kp.point || 'Key point',
-        importance_level: kp.importance || 3,
+        importance_level: Math.min(Math.max(kp.importance || 3, 1), 5), // Ensure importance is between 1-5
       }));
 
       const { error: keyPointsError } = await supabase

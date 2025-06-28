@@ -13,6 +13,7 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'expo-router';
 import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
@@ -27,6 +28,7 @@ type UploadWithData = Upload & {
 
 export default function LibraryScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const [uploads, setUploads] = useState<UploadWithData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -247,6 +249,10 @@ export default function LibraryScreen() {
     }
   };
 
+  const handleUploadPress = (upload: UploadWithData) => {
+    router.push(`/(tabs)/detail?id=${upload.id}`);
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
@@ -353,7 +359,12 @@ export default function LibraryScreen() {
         ) : (
           <View style={styles.list}>
             {uploads.map((upload) => (
-              <TouchableOpacity key={upload.id} style={styles.uploadCard} activeOpacity={0.7}>
+              <TouchableOpacity 
+                key={upload.id} 
+                style={styles.uploadCard} 
+                activeOpacity={0.7}
+                onPress={() => handleUploadPress(upload)}
+              >
                 <View style={styles.cardHeader}>
                   <View style={styles.fileInfo}>
                     <View style={styles.fileIcon}>
@@ -412,6 +423,10 @@ export default function LibraryScreen() {
                         )}
                       </View>
                     )}
+
+                    <View style={styles.tapHint}>
+                      <Text style={styles.tapHintText}>Tap to view full content</Text>
+                    </View>
                   </View>
                 )}
 
@@ -735,6 +750,18 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     fontStyle: 'italic',
     marginTop: 4,
+  },
+  tapHint: {
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  tapHintText: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
   },
   errorSection: {
     backgroundColor: '#FEF2F2',

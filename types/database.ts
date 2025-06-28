@@ -1,0 +1,133 @@
+export interface Database {
+  public: {
+    Tables: {
+      uploads: {
+        Row: {
+          id: string;
+          user_id: string;
+          file_name: string;
+          file_type: 'audio' | 'document';
+          file_url: string;
+          file_size: number;
+          status: 'uploaded' | 'processing' | 'completed' | 'error';
+          error_message?: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          file_name: string;
+          file_type: 'audio' | 'document';
+          file_url: string;
+          file_size: number;
+          status?: 'uploaded' | 'processing' | 'completed' | 'error';
+          error_message?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          file_name?: string;
+          file_type?: 'audio' | 'document';
+          file_url?: string;
+          file_size?: number;
+          status?: 'uploaded' | 'processing' | 'completed' | 'error';
+          error_message?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      transcriptions: {
+        Row: {
+          id: string;
+          upload_id: string;
+          transcription_text: string;
+          timestamps: any;
+          diarization: any;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          upload_id: string;
+          transcription_text: string;
+          timestamps: any;
+          diarization: any;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          upload_id?: string;
+          transcription_text?: string;
+          timestamps?: any;
+          diarization?: any;
+          created_at?: string;
+        };
+      };
+      document_texts: {
+        Row: {
+          id: string;
+          upload_id: string;
+          extracted_text: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          upload_id: string;
+          extracted_text: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          upload_id?: string;
+          extracted_text?: string;
+          created_at?: string;
+        };
+      };
+      summaries: {
+        Row: {
+          id: string;
+          upload_id: string;
+          summary_text: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          upload_id: string;
+          summary_text: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          upload_id?: string;
+          summary_text?: string;
+          created_at?: string;
+        };
+      };
+      key_points: {
+        Row: {
+          id: string;
+          upload_id: string;
+          point_text: string;
+          importance_level: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          upload_id: string;
+          point_text: string;
+          importance_level: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          upload_id?: string;
+          point_text?: string;
+          importance_level?: number;
+          created_at?: string;
+        };
+      };
+    };
+  };
+}

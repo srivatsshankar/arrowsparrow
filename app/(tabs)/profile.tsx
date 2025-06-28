@@ -6,6 +6,7 @@ export default function ProfileScreen() {
   const { user, signOut } = useAuth();
 
   const handleSignOut = async () => {
+    // alert('Signout button pressed'); // Debug alert
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',

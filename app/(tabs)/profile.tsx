@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, Settings, CircleHelp as HelpCircle } from 'lucide-react-native';
+import { User, LogOut, Settings, HelpCircle } from 'lucide-react-native';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
@@ -14,13 +14,11 @@ export default function ProfileScreen() {
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut();
-            } catch (error) {
+          onPress: () => {
+            signOut().catch((error) => {
               console.error('Sign out error:', error);
               Alert.alert('Error', 'Failed to sign out. Please try again.');
-            }
+            });
           },
         },
       ]

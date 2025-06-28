@@ -251,7 +251,8 @@ export default function LibraryScreen() {
 
   const handleUploadPress = (upload: UploadWithData) => {
     console.log('Navigating to detail with ID:', upload.id);
-    router.push(`/(tabs)/library/detail?id=${upload.id}`);
+    // Fixed: Navigate to the correct path within the library stack
+    router.push(`/library/detail?id=${upload.id}`);
   };
 
   const getStatusIcon = (status: string) => {

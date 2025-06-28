@@ -1,55 +1,24 @@
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, LogOut, Settings, CircleHelp as HelpCircle } from 'lucide-react-native';
+import { useCallback, useState } from 'react';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
 
-  const handleSignOut = () => {
-    console.log('Sign out button pressed');
-    
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { 
-          text: 'Cancel', 
-          style: 'cancel',
-          onPress: () => console.log('Sign out cancelled')
-        },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            console.log('User confirmed sign out');
-            try {
-              await signOut();
-              console.log('Sign out completed successfully');
-            } catch (error) {
-              console.error('Sign out error:', error);
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // Test function to bypass alert
-  const handleDirectSignOut = async () => {
-    console.log('Direct sign out called');
+  // Stable signOut handler for Alert
+  const handleSignOutConfirmed = useCallback(async () => {
+    setShowSignOutModal(false);
     try {
       await signOut();
-      console.log('Direct sign out completed');
     } catch (error) {
-      console.error('Direct sign out error:', error);
+      console.error('Sign out error:', error);
     }
-  };
+  }, [signOut]);
 
-  // Simple test function to verify TouchableOpacity works
-  const testButton = () => {
-    console.log('Test button pressed - TouchableOpacity is working!');
-    Alert.alert('Test', 'TouchableOpacity is working correctly!');
+  const confirmAndSignOut = () => {
+    setShowSignOutModal(true);
   };
 
   return (
@@ -81,29 +50,9 @@ export default function ProfileScreen() {
           <Text style={styles.menuItemText}>Help & Support</Text>
         </TouchableOpacity>
 
-        {/* Test button to verify TouchableOpacity works */}
-        <TouchableOpacity 
-          style={[styles.menuItem, { backgroundColor: '#E0F2FE' }]} 
-          onPress={testButton}
-          activeOpacity={0.7}
-        >
-          <Settings size={20} color="#0284C7" />
-          <Text style={[styles.menuItemText, { color: '#0284C7' }]}>Test Button (Should Work)</Text>
-        </TouchableOpacity>
-
-        {/* Debug button - remove this after testing */}
-        <TouchableOpacity 
-          style={[styles.menuItem, { backgroundColor: '#FEF2F2' }]} 
-          onPress={handleDirectSignOut}
-          activeOpacity={0.7}
-        >
-          <LogOut size={20} color="#F59E0B" />
-          <Text style={[styles.menuItemText, { color: '#F59E0B' }]}>Direct Sign Out (Debug)</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity 
           style={styles.menuItem} 
-          onPress={handleSignOut}
+          onPress={confirmAndSignOut}
           activeOpacity={0.7}
         >
           <LogOut size={20} color="#EF4444" />
@@ -117,6 +66,37 @@ export default function ProfileScreen() {
           AI-powered study assistant
         </Text>
       </View>
+
+      {/* Custom Sign Out Confirmation Modal */}
+      <Modal
+        visible={showSignOutModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSignOutModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Sign Out</Text>
+            <Text style={styles.modalMessage}>Are you sure you want to sign out?</Text>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowSignOutModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={handleSignOutConfirmed}
+              >
+                <Text style={styles.confirmButtonText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -207,5 +187,66 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#9CA3AF',
     marginTop: 4,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 24,
+    minWidth: 280,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
+  confirmButton: {
+    backgroundColor: '#EF4444',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

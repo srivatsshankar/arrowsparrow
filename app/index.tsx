@@ -344,8 +344,9 @@ export default function LibraryScreen() {
             <Image
               source={{ uri: 'https://images.pexels.com/photos/1181467/pexels-photo-1181467.jpeg?auto=compress&cs=tinysrgb&w=100&h=100&dpr=2' }}
               style={styles.logoImage}
+              accessibilityLabel="Arrow Sparrow icon"
+              accessibilityRole="image"
             />
-            <Text style={styles.logoText}>Arrow Sparrow</Text>
           </View>
           
           <View style={styles.topBarActions}>
@@ -657,20 +658,12 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
     flex: 1,
   },
   logoImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 12,
-  },
-  logoText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   topBarActions: {
     flexDirection: 'row',

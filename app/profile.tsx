@@ -1,10 +1,12 @@
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, Settings, CircleHelp as HelpCircle } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { User, LogOut, Settings, CircleHelp as HelpCircle, ArrowLeft } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
+  const router = useRouter();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
 
   // Stable signOut handler for Alert
@@ -24,7 +26,15 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={24} color="#111827" />
+        </TouchableOpacity>
         <Text style={styles.title}>Profile</Text>
+        <View style={styles.placeholder} />
       </View>
 
       <View style={styles.profileSection}>
@@ -107,13 +117,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 24,
     paddingTop: 60,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  backButton: {
+    padding: 8,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '600',
     color: '#111827',
+  },
+  placeholder: {
+    width: 40, // Same width as back button to center the title
   },
   profileSection: {
     padding: 24,

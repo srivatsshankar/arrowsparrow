@@ -13,19 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { 
-  ArrowLeft, 
-  FileText, 
-  Mic, 
-  Clock, 
-  User,
-  Star,
-  MessageSquare,
-  List,
-  Trash2,
-  MoreVertical,
-  X
-} from 'lucide-react-native';
+import { ArrowLeft, FileText, Mic, Clock, User, Star, MessageSquare, List, Trash2, MoveVertical as MoreVertical, X } from 'lucide-react-native';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {

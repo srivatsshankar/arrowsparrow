@@ -640,15 +640,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
   },
-  // Top Navigation Bar
+  // Top Navigation Bar - Reduced padding
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 16,
+    paddingHorizontal: 16, // Reduced from 24
+    paddingTop: 50, // Reduced from 60
+    paddingBottom: 12, // Reduced from 16
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
     shadowColor: '#000',
@@ -703,11 +703,11 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  // Library Header
+  // Library Header - Reduced padding
   libraryHeader: {
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 24,
-    paddingBottom: 20,
+    paddingHorizontal: 16, // Reduced from 24
+    paddingBottom: 16, // Reduced from 20
   },
   title: {
     fontSize: 28,
@@ -723,10 +723,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
+    padding: 12, // Reduced from 16
     backgroundColor: '#EBF4FF',
-    marginHorizontal: 24,
-    marginTop: 16,
+    marginHorizontal: 16, // Reduced from 24
+    marginTop: 12, // Reduced from 16
     borderRadius: 12,
     gap: 12,
   },
@@ -739,8 +739,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 48,
-    marginTop: 60,
+    padding: 32, // Reduced from 48
+    marginTop: 40, // Reduced from 60
   },
   emptyTitle: {
     fontSize: 24,
@@ -773,13 +773,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   list: {
-    padding: 24,
-    gap: 16,
+    padding: 16, // Reduced from 24
+    gap: 12, // Reduced from 16
   },
   uploadCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 20,
+    padding: 16, // Reduced from 20
     borderWidth: 1,
     borderColor: '#E5E7EB',
     shadowColor: '#000',
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   cardContent: {
-    gap: 16,
+    gap: 12, // Reduced from 16
   },
   contentSection: {
     gap: 8,
@@ -871,8 +871,8 @@ const styles = StyleSheet.create({
   },
   tapHint: {
     backgroundColor: '#F3F4F6',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6, // Reduced from 8
+    paddingHorizontal: 10, // Reduced from 12
     borderRadius: 8,
     alignItems: 'center',
   },
@@ -901,7 +901,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: '#FFFBEB',
-    padding: 12,
+    padding: 10, // Reduced from 12
     borderRadius: 8,
     gap: 8,
   },
@@ -917,8 +917,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.1)',
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
-    paddingTop: 120,
-    paddingRight: 24,
+    paddingTop: 110, // Adjusted for reduced top bar height
+    paddingRight: 16, // Reduced from 24
   },
   dropdownMenu: {
     backgroundColor: '#FFFFFF',
@@ -961,9 +961,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingTop: 24,
-    paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingTop: 20, // Reduced from 24
+    paddingHorizontal: 20, // Reduced from 24
+    paddingBottom: 32, // Reduced from 40
     maxHeight: '80%',
   },
   modalHeader: {
@@ -983,16 +983,16 @@ const styles = StyleSheet.create({
   modalSubtitle: {
     fontSize: 16,
     color: '#6B7280',
-    marginBottom: 32,
+    marginBottom: 24, // Reduced from 32
   },
   uploadOptions: {
-    gap: 16,
-    marginBottom: 32,
+    gap: 12, // Reduced from 16
+    marginBottom: 24, // Reduced from 32
   },
   uploadOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
+    padding: 16, // Reduced from 20
     backgroundColor: '#F9FAFB',
     borderRadius: 16,
     borderWidth: 1,
@@ -1033,20 +1033,20 @@ const styles = StyleSheet.create({
   },
   infoSection: {
     backgroundColor: '#F9FAFB',
-    padding: 20,
+    padding: 16, // Reduced from 20
     borderRadius: 16,
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
   },
   infoTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 16,
+    marginBottom: 12, // Reduced from 16
   },
   infoItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10, // Reduced from 12
   },
   infoNumber: {
     width: 24,

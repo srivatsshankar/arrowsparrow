@@ -14,7 +14,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, User } from 'lucide-react-native';
+import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 
@@ -251,6 +251,7 @@ export default function LibraryScreen() {
 
   const handleUploadPress = (upload: UploadWithData) => {
     console.log('Navigating to detail with ID:', upload.id);
+    // Fixed: Navigate to the correct path within the library stack
     router.push(`/library/detail?id=${upload.id}`);
   };
 
@@ -317,29 +318,20 @@ export default function LibraryScreen() {
       >
         <View style={styles.header}>
           <View style={styles.headerContent}>
-            <View style={styles.titleSection}>
+            <View>
               <Text style={styles.title}>Your Library</Text>
               <Text style={styles.subtitle}>
                 {uploads.length} item{uploads.length !== 1 ? 's' : ''} in your collection
               </Text>
             </View>
-            <View style={styles.headerActions}>
-              <TouchableOpacity
-                style={styles.uploadButton}
-                onPress={() => setShowUploadModal(true)}
-                activeOpacity={0.8}
-              >
-                <Plus size={20} color="#FFFFFF" />
-                <Text style={styles.uploadButtonText}>Upload</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.profileButton}
-                onPress={() => router.push('/profile')}
-                activeOpacity={0.8}
-              >
-                <User size={20} color="#3B82F6" />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.uploadButton}
+              onPress={() => setShowUploadModal(true)}
+              activeOpacity={0.8}
+            >
+              <Plus size={20} color="#FFFFFF" />
+              <Text style={styles.uploadButtonText}>Upload</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -582,9 +574,6 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 60,
   },
-  titleSection: {
-    flex: 1,
-  },
   title: {
     fontSize: 28,
     fontWeight: '700',
@@ -594,11 +583,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6B7280',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
   },
   uploadButton: {
     backgroundColor: '#3B82F6',
@@ -618,16 +602,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-  },
-  profileButton: {
-    width: 44,
-    height: 44,
-    backgroundColor: '#EBF4FF',
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#3B82F6',
   },
   uploadingContainer: {
     flexDirection: 'row',

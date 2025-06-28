@@ -199,22 +199,13 @@ export default function DetailScreen() {
             {formatFileSize(upload.file_size)} • {formatDate(upload.created_at)}
           </Text>
         </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity 
-            style={styles.optionsButton} 
-            onPress={() => setShowOptionsModal(true)}
-            activeOpacity={0.7}
-          >
-            <MoreVertical size={20} color="#6B7280" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() => router.push('/profile')}
-            activeOpacity={0.8}
-          >
-            <User size={20} color="#3B82F6" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity 
+          style={styles.optionsButton} 
+          onPress={() => setShowOptionsModal(true)}
+          activeOpacity={0.7}
+        >
+          <MoreVertical size={20} color="#6B7280" />
+        </TouchableOpacity>
       </View>
 
       {/* File Info Card */}
@@ -489,23 +480,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
   },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
   optionsButton: {
     padding: 8,
-  },
-  profileButton: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#EBF4FF',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#3B82F6',
+    marginLeft: 12,
   },
   fileInfoCard: {
     flexDirection: 'row',

@@ -81,8 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    console.log('SignOut function called');
     try {
-      // Clear local state first
+      // Clear local state immediately
       setUser(null);
       setSession(null);
       
@@ -92,11 +93,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('Supabase sign out error:', error);
       }
       
-      // Navigate to sign in page
+      console.log('Navigating to sign in page');
+      // Force navigation to sign in page
       router.replace('/(auth)/signin');
+      
     } catch (error) {
       console.error('Sign out error:', error);
       // Even if there's an error, ensure we navigate to sign in
+      setUser(null);
+      setSession(null);
       router.replace('/(auth)/signin');
     }
   };

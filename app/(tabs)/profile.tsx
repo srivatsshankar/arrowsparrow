@@ -1,28 +1,49 @@
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, Settings, CircleHelp as HelpCircle } from 'lucide-react-native';
+import { User, LogOut, Settings, HelpCircle } from 'lucide-react-native';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
 
   const handleSignOut = () => {
+    console.log('Sign out button pressed');
+    
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Cancel', 
+          style: 'cancel',
+          onPress: () => console.log('Sign out cancelled')
+        },
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: () => {
-            signOut().catch((error) => {
+          onPress: async () => {
+            console.log('User confirmed sign out');
+            try {
+              await signOut();
+              console.log('Sign out completed successfully');
+            } catch (error) {
               console.error('Sign out error:', error);
               Alert.alert('Error', 'Failed to sign out. Please try again.');
-            });
+            }
           },
         },
       ]
     );
+  };
+
+  // Test function to bypass alert
+  const handleDirectSignOut = async () => {
+    console.log('Direct sign out called');
+    try {
+      await signOut();
+      console.log('Direct sign out completed');
+    } catch (error) {
+      console.error('Direct sign out error:', error);
+    }
   };
 
   return (
@@ -52,6 +73,15 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.menuItem}>
           <HelpCircle size={20} color="#6B7280" />
           <Text style={styles.menuItemText}>Help & Support</Text>
+        </TouchableOpacity>
+
+        {/* Debug button - remove this after testing */}
+        <TouchableOpacity 
+          style={[styles.menuItem, { backgroundColor: '#FEF2F2' }]} 
+          onPress={handleDirectSignOut}
+        >
+          <LogOut size={20} color="#F59E0B" />
+          <Text style={[styles.menuItemText, { color: '#F59E0B' }]}>Direct Sign Out (Debug)</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.menuItem} onPress={handleSignOut}>

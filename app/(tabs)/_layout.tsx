@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Upload, BookOpen, User } from 'lucide-react-native';
+import { BookOpen, User } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -16,15 +16,6 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{
-          title: 'Upload',
-          tabBarIcon: ({ size, color }) => (
-            <Upload size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="library"
         options={{
           title: 'Library',
           tabBarIcon: ({ size, color }) => (

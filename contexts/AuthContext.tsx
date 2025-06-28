@@ -26,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const router = useRouter();
   const segments = useSegments();
 
@@ -40,8 +41,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
+        
         setSession(session);
         setUser(session?.user ?? null);
+        
+        // Handle sign out event specifically
+        if (event === 'SIGNED_OUT') {
+          setIsSigningOut(false);
+          router.replace('/(auth)/signin');
+        }
+        
         setLoading(false);
       }
     );
@@ -51,7 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Redirect logic
   useEffect(() => {
-    if (loading) return;
+    if (loading || isSigningOut) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
@@ -60,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else if (user && inAuthGroup) {
       router.replace('/(tabs)');
     }
-  }, [user, segments, loading]);
+  }, [user, segments, loading, isSigningOut]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -79,8 +89,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    try {
+      setIsSigningOut(true);
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        setIsSigningOut(false);
+        throw error;
+      }
+      // The auth state change listener will handle the redirect
+    } catch (error) {
+      setIsSigningOut(false);
+      throw error;
+    }
   };
 
   return (

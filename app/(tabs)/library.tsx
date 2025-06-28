@@ -10,7 +10,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { FileText, Mic, Clock, CheckCircle, AlertCircle, Loader } from 'lucide-react-native';
+import { FileText, Mic, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader } from 'lucide-react-native';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {

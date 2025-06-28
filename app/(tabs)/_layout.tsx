@@ -15,7 +15,7 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="library"
         options={{
           title: 'Library',
           tabBarIcon: ({ size, color }) => (
@@ -30,13 +30,6 @@ export default function TabLayout() {
           tabBarIcon: ({ size, color }) => (
             <User size={size} color={color} />
           ),
-        }}
-      />
-      <Tabs.Screen
-        name="detail"
-        options={{
-          href: null, // Hide from tab bar
-          title: 'Detail',
         }}
       />
     </Tabs>

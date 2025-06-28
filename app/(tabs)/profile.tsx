@@ -46,6 +46,12 @@ export default function ProfileScreen() {
     }
   };
 
+  // Simple test function to verify TouchableOpacity works
+  const testButton = () => {
+    console.log('Test button pressed - TouchableOpacity is working!');
+    Alert.alert('Test', 'TouchableOpacity is working correctly!');
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -75,16 +81,31 @@ export default function ProfileScreen() {
           <Text style={styles.menuItemText}>Help & Support</Text>
         </TouchableOpacity>
 
+        {/* Test button to verify TouchableOpacity works */}
+        <TouchableOpacity 
+          style={[styles.menuItem, { backgroundColor: '#E0F2FE' }]} 
+          onPress={testButton}
+          activeOpacity={0.7}
+        >
+          <Settings size={20} color="#0284C7" />
+          <Text style={[styles.menuItemText, { color: '#0284C7' }]}>Test Button (Should Work)</Text>
+        </TouchableOpacity>
+
         {/* Debug button - remove this after testing */}
         <TouchableOpacity 
           style={[styles.menuItem, { backgroundColor: '#FEF2F2' }]} 
           onPress={handleDirectSignOut}
+          activeOpacity={0.7}
         >
           <LogOut size={20} color="#F59E0B" />
           <Text style={[styles.menuItemText, { color: '#F59E0B' }]}>Direct Sign Out (Debug)</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={handleSignOut}>
+        <TouchableOpacity 
+          style={styles.menuItem} 
+          onPress={handleSignOut}
+          activeOpacity={0.7}
+        >
           <LogOut size={20} color="#EF4444" />
           <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Sign Out</Text>
         </TouchableOpacity>
@@ -164,11 +185,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    minHeight: 56, // Ensure minimum touch target size
   },
   menuItemText: {
     fontSize: 16,
     color: '#111827',
     marginLeft: 12,
+    flex: 1, // Prevent text from interfering with touch
   },
   footer: {
     alignItems: 'center',

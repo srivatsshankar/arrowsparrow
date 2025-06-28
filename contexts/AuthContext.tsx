@@ -26,7 +26,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isSigningOut, setIsSigningOut] = useState(false);
   const router = useRouter();
   const segments = useSegments();
 
@@ -45,13 +44,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         setSession(session);
         setUser(session?.user ?? null);
-        
-        // Handle sign out event specifically
-        if (event === 'SIGNED_OUT') {
-          setIsSigningOut(false);
-          router.replace('/(auth)/signin');
-        }
-        
         setLoading(false);
       }
     );
@@ -61,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Redirect logic
   useEffect(() => {
-    if (loading || isSigningOut) return;
+    if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
@@ -70,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else if (user && inAuthGroup) {
       router.replace('/(tabs)');
     }
-  }, [user, segments, loading, isSigningOut]);
+  }, [user, segments, loading]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -90,16 +82,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      setIsSigningOut(true);
+      // Clear local state immediately
+      setUser(null);
+      setSession(null);
+      
+      // Sign out from Supabase
       const { error } = await supabase.auth.signOut();
       if (error) {
-        setIsSigningOut(false);
-        throw error;
+        console.error('Sign out error:', error);
+        // Even if there's an error, we still want to navigate to sign in
       }
-      // The auth state change listener will handle the redirect
+      
+      // Force navigation to sign in page
+      router.replace('/(auth)/signin');
     } catch (error) {
-      setIsSigningOut(false);
-      throw error;
+      console.error('Sign out error:', error);
+      // Even if there's an error, clear state and navigate
+      setUser(null);
+      setSession(null);
+      router.replace('/(auth)/signin');
     }
   };
 

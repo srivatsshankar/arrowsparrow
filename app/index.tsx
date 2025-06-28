@@ -364,7 +364,7 @@ export default function LibraryScreen() {
               onPress={() => setShowDropdownMenu(true)}
               activeOpacity={0.8}
             >
-              <Menu size={22} color="#374151" />
+              <Menu size={20} color="#374151" />
             </TouchableOpacity>
           </View>
         </View>
@@ -683,6 +683,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
+    height: 38, // Explicit height for consistency
   },
   uploadButtonText: {
     color: '#FFFFFF',
@@ -690,9 +691,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   menuButton: {
-    padding: 8,
-    borderRadius: 8,
+    width: 38, // Same as upload button height
+    height: 38, // Same as upload button height
+    borderRadius: 10,
     backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   // Library Header
   libraryHeader: {

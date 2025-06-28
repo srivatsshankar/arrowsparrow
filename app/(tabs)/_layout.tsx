@@ -26,7 +26,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="detail"
         options={{
-          href: null, // Hide from tab bar
+          href: null, // Hide from tab bar but keep accessible
+          title: 'Detail',
         }}
       />
       <Tabs.Screen

@@ -250,7 +250,11 @@ export default function LibraryScreen() {
   };
 
   const handleUploadPress = (upload: UploadWithData) => {
-    router.push(`/(tabs)/detail?id=${upload.id}`);
+    console.log('Navigating to detail with ID:', upload.id);
+    router.push({
+      pathname: '/(tabs)/detail',
+      params: { id: upload.id }
+    });
   };
 
   const getStatusIcon = (status: string) => {
@@ -440,6 +444,13 @@ export default function LibraryScreen() {
                 )}
               </TouchableOpacity>
             ))}
+
+            <View style={styles.configNote}>
+              <AlertCircle size={16} color="#F59E0B" />
+              <Text style={styles.configNoteText}>
+                Note: AI processing requires API keys to be configured in your Supabase project settings.
+              </Text>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -529,13 +540,6 @@ export default function LibraryScreen() {
                 <Text style={styles.infoNumber}>3</Text>
                 <Text style={styles.infoText}>Get summaries and key points</Text>
               </View>
-            </View>
-
-            <View style={styles.configNote}>
-              <AlertCircle size={16} color="#F59E0B" />
-              <Text style={styles.configNoteText}>
-                Note: AI processing requires API keys to be configured in your Supabase project settings.
-              </Text>
             </View>
           </View>
         </View>

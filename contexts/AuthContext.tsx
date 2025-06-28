@@ -53,16 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Redirect logic
   useEffect(() => {
-    console.log('Redirect useEffect:', { user, segments, loading }); // Debug log
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!user && !inAuthGroup) {
-      console.log('Redirecting to /auth/signin'); // Debug log
       router.replace('/(auth)/signin');
     } else if (user && inAuthGroup) {
-      console.log('Redirecting to /tabs'); // Debug log
       router.replace('/(tabs)');
     }
   }, [user, segments, loading]);
@@ -85,28 +82,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
-      // Clear local state immediately
+      // Clear local state first
       setUser(null);
       setSession(null);
-      console.log('User and session set to null'); // Debug log
+      
       // Sign out from Supabase
       const { error } = await supabase.auth.signOut();
-      alert('Supabase signOut called, error: ' + (error ? error.message : 'none'));
-      console.log('Supabase signOut called, error:', error); // Debug log
       if (error) {
-        console.error('Sign out error:', error);
-        // Even if there's an error, we still want to navigate to sign in
+        console.error('Supabase sign out error:', error);
       }
-      // Debug: Alert to confirm navigation attempt
-      alert('Attempting to navigate to sign in page');
-      // Force navigation to sign in page
+      
+      // Navigate to sign in page
       router.replace('/(auth)/signin');
     } catch (error) {
       console.error('Sign out error:', error);
-      // Even if there's an error, clear state and navigate
-      setUser(null);
-      setSession(null);
-      alert('Sign out error, navigating to sign in page');
+      // Even if there's an error, ensure we navigate to sign in
       router.replace('/(auth)/signin');
     }
   };

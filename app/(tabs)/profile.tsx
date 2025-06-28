@@ -1,12 +1,11 @@
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, LogOut, Settings, CircleHelp as HelpCircle } from 'lucide-react-native';
+import { User, LogOut, Settings, HelpCircle } from 'lucide-react-native';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
 
-  const handleSignOut = async () => {
-    // alert('Signout button pressed'); // Debug alert
+  const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',

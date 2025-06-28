@@ -13,18 +13,7 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  Upload, 
-  Mic, 
-  FileText, 
-  Square, 
-  Clock, 
-  CheckCircle, 
-  AlertCircle, 
-  Loader,
-  X,
-  Plus
-} from 'lucide-react-native';
+import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 

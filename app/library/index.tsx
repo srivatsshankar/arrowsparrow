@@ -14,7 +14,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus } from 'lucide-react-native';
+import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 
@@ -27,12 +27,13 @@ type UploadWithData = Upload & {
 };
 
 export default function LibraryScreen() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const router = useRouter();
   const [uploads, setUploads] = useState<UploadWithData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showDropdownMenu, setShowDropdownMenu] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -71,6 +72,27 @@ export default function LibraryScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchUploads();
+  };
+
+  const handleMenuItemPress = (action: string) => {
+    setShowDropdownMenu(false);
+    
+    switch (action) {
+      case 'profile':
+        router.push('/profile');
+        break;
+      case 'signout':
+        handleSignOut();
+        break;
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
   };
 
   const startRecording = async () => {
@@ -251,7 +273,6 @@ export default function LibraryScreen() {
 
   const handleUploadPress = (upload: UploadWithData) => {
     console.log('Navigating to detail with ID:', upload.id);
-    // Fixed: Navigate to the correct path within the library stack
     router.push(`/library/detail?id=${upload.id}`);
   };
 
@@ -318,20 +339,30 @@ export default function LibraryScreen() {
       >
         <View style={styles.header}>
           <View style={styles.headerContent}>
-            <View>
+            <View style={styles.headerLeft}>
               <Text style={styles.title}>Your Library</Text>
               <Text style={styles.subtitle}>
                 {uploads.length} item{uploads.length !== 1 ? 's' : ''} in your collection
               </Text>
             </View>
-            <TouchableOpacity
-              style={styles.uploadButton}
-              onPress={() => setShowUploadModal(true)}
-              activeOpacity={0.8}
-            >
-              <Plus size={20} color="#FFFFFF" />
-              <Text style={styles.uploadButtonText}>Upload</Text>
-            </TouchableOpacity>
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                style={styles.uploadButton}
+                onPress={() => setShowUploadModal(true)}
+                activeOpacity={0.8}
+              >
+                <Plus size={20} color="#FFFFFF" />
+                <Text style={styles.uploadButtonText}>Upload</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.menuButton}
+                onPress={() => setShowDropdownMenu(true)}
+                activeOpacity={0.8}
+              >
+                <Menu size={24} color="#374151" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -452,6 +483,42 @@ export default function LibraryScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Dropdown Menu Modal */}
+      <Modal
+        visible={showDropdownMenu}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDropdownMenu(false)}
+      >
+        <TouchableOpacity 
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setShowDropdownMenu(false)}
+        >
+          <View style={styles.dropdownMenu}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => handleMenuItemPress('profile')}
+              activeOpacity={0.7}
+            >
+              <User size={20} color="#374151" />
+              <Text style={styles.dropdownItemText}>Profile</Text>
+            </TouchableOpacity>
+            
+            <View style={styles.dropdownDivider} />
+            
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => handleMenuItemPress('signout')}
+              activeOpacity={0.7}
+            >
+              <LogOut size={20} color="#EF4444" />
+              <Text style={[styles.dropdownItemText, { color: '#EF4444' }]}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Upload Modal */}
       <Modal
@@ -574,6 +641,14 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 60,
   },
+  headerLeft: {
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   title: {
     fontSize: 28,
     fontWeight: '700',
@@ -602,6 +677,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  menuButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
   },
   uploadingContainer: {
     flexDirection: 'row',
@@ -781,6 +861,60 @@ const styles = StyleSheet.create({
     color: '#7F1D1D',
     fontStyle: 'italic',
   },
+  configNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  configNoteText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 16,
+  },
+  // Dropdown menu styles
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 120,
+    paddingRight: 24,
+  },
+  dropdownMenu: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 8,
+    minWidth: 160,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  dropdownDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 4,
+    marginHorizontal: 8,
+  },
   // Modal styles
   modalOverlay: {
     flex: 1,
@@ -894,19 +1028,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#6B7280',
-  },
-  configNote: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#FFFBEB',
-    padding: 12,
-    borderRadius: 8,
-    gap: 8,
-  },
-  configNoteText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#92400E',
-    lineHeight: 16,
   },
 });

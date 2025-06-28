@@ -59,7 +59,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/signin');
     } else if (user && inAuthGroup) {
-      router.replace('/(tabs)');
+      // Redirect to library as the default view
+      router.replace('/library');
     }
   }, [user, segments, loading]);
 

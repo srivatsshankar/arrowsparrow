@@ -59,8 +59,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user && !inAuthGroup) {
       router.replace('/(auth)/signin');
     } else if (user && inAuthGroup) {
-      // Redirect to library as the default view
-      router.replace('/library');
+      // Redirect to the main library screen (index)
+      router.replace('/');
     }
   }, [user, segments, loading]);
 

@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,7 +21,10 @@ import {
   User,
   Star,
   MessageSquare,
-  List
+  List,
+  Trash2,
+  MoreVertical,
+  X
 } from 'lucide-react-native';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
@@ -36,6 +41,9 @@ export default function DetailScreen() {
   const { user } = useAuth();
   const [upload, setUpload] = useState<UploadWithData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'content' | 'summary' | 'keypoints'>('content');
 
   useEffect(() => {
@@ -71,6 +79,48 @@ export default function DetailScreen() {
       console.error('Error fetching upload detail:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!upload || !user) return;
+
+    setDeleting(true);
+    try {
+      // Delete the file from storage first
+      const fileName = upload.file_url.split('/').pop();
+      if (fileName) {
+        const filePath = `${user.id}/${fileName}`;
+        const { error: storageError } = await supabase.storage
+          .from('uploads')
+          .remove([filePath]);
+
+        if (storageError) {
+          console.error('Error deleting file from storage:', storageError);
+          // Continue with database deletion even if storage deletion fails
+        }
+      }
+
+      // Delete the upload record (this will cascade delete related records)
+      const { error: dbError } = await supabase
+        .from('uploads')
+        .delete()
+        .eq('id', upload.id)
+        .eq('user_id', user.id);
+
+      if (dbError) {
+        throw dbError;
+      }
+
+      // Navigate back to library
+      router.back();
+      
+    } catch (error) {
+      console.error('Error deleting upload:', error);
+      Alert.alert('Error', 'Failed to delete the item. Please try again.');
+    } finally {
+      setDeleting(false);
+      setShowDeleteModal(false);
     }
   };
 
@@ -161,6 +211,13 @@ export default function DetailScreen() {
             {formatFileSize(upload.file_size)} • {formatDate(upload.created_at)}
           </Text>
         </View>
+        <TouchableOpacity 
+          style={styles.optionsButton} 
+          onPress={() => setShowOptionsModal(true)}
+          activeOpacity={0.7}
+        >
+          <MoreVertical size={20} color="#6B7280" />
+        </TouchableOpacity>
       </View>
 
       {/* File Info Card */}
@@ -277,6 +334,86 @@ export default function DetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Options Modal */}
+      <Modal
+        visible={showOptionsModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowOptionsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.optionsModal}>
+            <View style={styles.optionsHeader}>
+              <Text style={styles.optionsTitle}>Options</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowOptionsModal(false)}
+                activeOpacity={0.7}
+              >
+                <X size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => {
+                setShowOptionsModal(false);
+                setShowDeleteModal(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Trash2 size={20} color="#EF4444" />
+              <Text style={styles.deleteOptionText}>Delete Item</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.deleteModal}>
+            <View style={styles.deleteIconContainer}>
+              <Trash2 size={32} color="#EF4444" />
+            </View>
+            
+            <Text style={styles.deleteTitle}>Delete Item</Text>
+            <Text style={styles.deleteMessage}>
+              Are you sure you want to delete "{upload.file_name}"? This action cannot be undone and will remove all associated content including transcriptions, summaries, and key points.
+            </Text>
+            
+            <View style={styles.deleteActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowDeleteModal(false)}
+                disabled={deleting}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
+                onPress={handleDelete}
+                disabled={deleting}
+                activeOpacity={0.7}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -354,6 +491,10 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 14,
     color: '#6B7280',
+  },
+  optionsButton: {
+    padding: 8,
+    marginLeft: 12,
   },
   fileInfoCard: {
     flexDirection: 'row',
@@ -497,5 +638,123 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#9CA3AF',
     marginTop: 12,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionsModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 24,
+    minWidth: 280,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  optionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  optionsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 12,
+  },
+  deleteOptionText: {
+    fontSize: 16,
+    color: '#EF4444',
+    fontWeight: '500',
+  },
+  deleteModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  deleteIconContainer: {
+    width: 64,
+    height: 64,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  deleteTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  deleteMessage: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  deleteActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  deleteButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

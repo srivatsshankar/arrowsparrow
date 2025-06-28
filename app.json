@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "StudyFlow",
-    "slug": "studyflow-app",
+    "name": "Arrow Sparrow",
+    "slug": "arrow-sparrow-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "studyflow",
+    "scheme": "arrowsparrow",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {

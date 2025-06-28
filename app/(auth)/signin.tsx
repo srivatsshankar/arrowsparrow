@@ -44,7 +44,7 @@ export default function SignIn() {
         <View style={styles.header}>
           <LogIn size={48} color="#3B82F6" />
           <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue to StudyFlow</Text>
+          <Text style={styles.subtitle}>Sign in to continue to Arrow Sparrow</Text>
         </View>
 
         <View style={styles.form}>

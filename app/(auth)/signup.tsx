@@ -56,7 +56,7 @@ export default function SignUp() {
         <View style={styles.header}>
           <UserPlus size={48} color="#3B82F6" />
           <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join StudyFlow to get started</Text>
+          <Text style={styles.subtitle}>Join Arrow Sparrow to get started</Text>
         </View>
 
         <View style={styles.form}>

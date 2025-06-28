@@ -62,7 +62,7 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>StudyFlow v1.0.0</Text>
+        <Text style={styles.footerText}>Arrow Sparrow v1.0.0</Text>
         <Text style={styles.footerSubtext}>
           AI-powered study assistant
         </Text>

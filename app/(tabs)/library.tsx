@@ -14,9 +14,9 @@ import { FileText, Mic, Clock, CheckCircle, AlertCircle, Loader } from 'lucide-r
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {
-  transcription?: { transcription_text: string };
-  document_text?: { extracted_text: string };
-  summary?: { summary_text: string };
+  transcriptions?: Array<{ transcription_text: string }>;
+  document_texts?: Array<{ extracted_text: string }>;
+  summaries?: Array<{ summary_text: string }>;
   key_points?: Array<{ point_text: string; importance_level: number }>;
 };
 
@@ -169,11 +169,11 @@ export default function LibraryScreen() {
 
               {upload.status === 'completed' && (
                 <View style={styles.cardContent}>
-                  {upload.summary && (
+                  {upload.summaries && upload.summaries.length > 0 && (
                     <View style={styles.contentSection}>
                       <Text style={styles.sectionTitle}>Summary</Text>
                       <Text style={styles.summaryText} numberOfLines={3}>
-                        {upload.summary.summary_text}
+                        {upload.summaries[0].summary_text}
                       </Text>
                     </View>
                   )}

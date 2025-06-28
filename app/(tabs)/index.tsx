@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
@@ -21,6 +22,11 @@ export default function UploadScreen() {
 
   const startRecording = async () => {
     try {
+      if (Platform.OS === 'web') {
+        Alert.alert('Not Available', 'Audio recording is not available on web platform');
+        return;
+      }
+
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status !== 'granted') {
         Alert.alert('Permission required', 'Please grant microphone access to record audio');
@@ -100,7 +106,7 @@ export default function UploadScreen() {
         .getPublicUrl(filePath);
 
       // Save to database
-      const { error: dbError } = await supabase
+      const { data: dbData, error: dbError } = await supabase
         .from('uploads')
         .insert({
           user_id: user.id,
@@ -109,13 +115,31 @@ export default function UploadScreen() {
           file_url: publicUrl,
           file_size: fileSize,
           status: 'uploaded',
-        });
+        })
+        .select()
+        .single();
 
       if (dbError) throw dbError;
 
       Alert.alert('Success', 'File uploaded successfully! Processing will begin shortly.');
       
-      // TODO: Trigger processing API
+      // Trigger processing via edge function
+      const processingResponse = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/process-upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          uploadId: dbData.id,
+          fileType: fileType,
+          fileUrl: publicUrl,
+        }),
+      });
+
+      if (!processingResponse.ok) {
+        console.error('Processing request failed:', await processingResponse.text());
+      }
       
     } catch (error) {
       console.error('Upload error:', error);
@@ -138,21 +162,24 @@ export default function UploadScreen() {
         <TouchableOpacity
           style={[styles.uploadCard, isRecording && styles.recordingCard]}
           onPress={isRecording ? stopRecording : startRecording}
+          disabled={Platform.OS === 'web'}
         >
           <View style={styles.cardIcon}>
             {isRecording ? (
               <Square size={32} color={isRecording ? '#EF4444' : '#3B82F6'} />
             ) : (
-              <Mic size={32} color="#3B82F6" />
+              <Mic size={32} color={Platform.OS === 'web' ? '#9CA3AF' : '#3B82F6'} />
             )}
           </View>
-          <Text style={styles.cardTitle}>
+          <Text style={[styles.cardTitle, Platform.OS === 'web' && styles.disabledText]}>
             {isRecording ? 'Stop Recording' : 'Record Audio'}
           </Text>
-          <Text style={styles.cardDescription}>
-            {isRecording 
-              ? 'Tap to stop and upload recording'
-              : 'Record lectures, meetings, or study sessions'
+          <Text style={[styles.cardDescription, Platform.OS === 'web' && styles.disabledText]}>
+            {Platform.OS === 'web' 
+              ? 'Audio recording not available on web'
+              : isRecording 
+                ? 'Tap to stop and upload recording'
+                : 'Record lectures, meetings, or study sessions'
             }
           </Text>
         </TouchableOpacity>
@@ -263,6 +290,9 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  disabledText: {
+    color: '#9CA3AF',
   },
   uploadingContainer: {
     padding: 24,

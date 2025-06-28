@@ -1,11 +1,10 @@
-export async function POST(request: Request) {
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  };
+import { corsHeaders } from '../_shared/cors.ts';
 
-  if (request.method === 'OPTIONS') {
+const ELEVEN_LABS_API_KEY = Deno.env.get('ELEVEN_LABS_API_KEY');
+const GOOGLE_GEMINI_API_KEY = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 200,
       headers: corsHeaders,
@@ -13,7 +12,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { uploadId, fileType, fileUrl } = await request.json();
+    const { uploadId, fileType, fileUrl } = await req.json();
 
     if (!uploadId || !fileType || !fileUrl) {
       return new Response(
@@ -25,8 +24,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    const { createClient } = await import('npm:@supabase/supabase-js@2');
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
     // Update status to processing
-    const { supabase } = await import('@/lib/supabase');
     await supabase
       .from('uploads')
       .update({ status: 'processing' })
@@ -36,14 +41,14 @@ export async function POST(request: Request) {
 
     if (fileType === 'audio') {
       // Process audio with Eleven Labs
-      processedText = await processAudioWithElevenLabs(fileUrl, uploadId);
+      processedText = await processAudioWithElevenLabs(fileUrl, uploadId, supabase);
     } else if (fileType === 'document') {
-      // Process document with Docling
-      processedText = await processDocumentWithDocling(fileUrl, uploadId);
+      // Process document with simple text extraction
+      processedText = await processDocumentText(fileUrl, uploadId, supabase);
     }
 
     // Generate summary and key points with Gemini
-    await processSummaryWithGemini(processedText, uploadId);
+    await processSummaryWithGemini(processedText, uploadId, supabase);
 
     // Update status to completed
     await supabase
@@ -69,12 +74,10 @@ export async function POST(request: Request) {
       }
     );
   }
-}
+});
 
-async function processAudioWithElevenLabs(fileUrl: string, uploadId: string): Promise<string> {
-  const apiKey = process.env.ELEVEN_LABS_API_KEY;
-  
-  if (!apiKey) {
+async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, supabase: any): Promise<string> {
+  if (!ELEVEN_LABS_API_KEY) {
     throw new Error('Eleven Labs API key not configured');
   }
 
@@ -92,7 +95,7 @@ async function processAudioWithElevenLabs(fileUrl: string, uploadId: string): Pr
     const transcriptionResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
       method: 'POST',
       headers: {
-        'xi-api-key': apiKey,
+        'xi-api-key': ELEVEN_LABS_API_KEY,
       },
       body: formData,
     });
@@ -104,7 +107,6 @@ async function processAudioWithElevenLabs(fileUrl: string, uploadId: string): Pr
     const transcriptionData = await transcriptionResponse.json();
     
     // Save transcription to database
-    const { supabase } = await import('@/lib/supabase');
     await supabase
       .from('transcriptions')
       .insert({
@@ -121,18 +123,17 @@ async function processAudioWithElevenLabs(fileUrl: string, uploadId: string): Pr
   }
 }
 
-async function processDocumentWithDocling(fileUrl: string, uploadId: string): Promise<string> {
+async function processDocumentText(fileUrl: string, uploadId: string, supabase: any): Promise<string> {
   try {
     // Download document
     const docResponse = await fetch(fileUrl);
     const docBuffer = await docResponse.arrayBuffer();
 
-    // For now, we'll use a simplified text extraction
+    // For demonstration, we'll extract basic text
     // In production, you would integrate with Docling API
-    const extractedText = `[Document text extracted from ${fileUrl}]`;
+    const extractedText = `[Document text extracted from uploaded file. In production, this would use Docling to extract structured text from PDF/Word documents.]`;
 
     // Save extracted text to database
-    const { supabase } = await import('@/lib/supabase');
     await supabase
       .from('document_texts')
       .insert({
@@ -147,10 +148,8 @@ async function processDocumentWithDocling(fileUrl: string, uploadId: string): Pr
   }
 }
 
-async function processSummaryWithGemini(text: string, uploadId: string): Promise<void> {
-  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  
-  if (!apiKey) {
+async function processSummaryWithGemini(text: string, uploadId: string, supabase: any): Promise<void> {
+  if (!GOOGLE_GEMINI_API_KEY) {
     throw new Error('Google Gemini API key not configured');
   }
 
@@ -172,7 +171,7 @@ async function processSummaryWithGemini(text: string, uploadId: string): Promise
       }
     `;
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -200,7 +199,6 @@ async function processSummaryWithGemini(text: string, uploadId: string): Promise
     const analysis = JSON.parse(jsonMatch[0]);
 
     // Save summary and key points to database
-    const { supabase } = await import('@/lib/supabase');
     
     // Save summary
     await supabase

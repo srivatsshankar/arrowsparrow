@@ -25,36 +25,76 @@ Deno.serve(async (req: Request) => {
     }
 
     // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing Supabase configuration');
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error' }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
     const { createClient } = await import('npm:@supabase/supabase-js@2');
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Update status to processing
-    await supabase
+    const { error: updateError } = await supabase
       .from('uploads')
       .update({ status: 'processing' })
       .eq('id', uploadId);
 
-    let processedText = '';
-
-    if (fileType === 'audio') {
-      // Process audio with Eleven Labs
-      processedText = await processAudioWithElevenLabs(fileUrl, uploadId, supabase);
-    } else if (fileType === 'document') {
-      // Process document with simple text extraction
-      processedText = await processDocumentText(fileUrl, uploadId, supabase);
+    if (updateError) {
+      console.error('Failed to update upload status:', updateError);
+      throw new Error('Database update failed');
     }
 
-    // Generate summary and key points with Gemini
-    await processSummaryWithGemini(processedText, uploadId, supabase);
+    let processedText = '';
+    let errorMessage = '';
 
-    // Update status to completed
-    await supabase
-      .from('uploads')
-      .update({ status: 'completed' })
-      .eq('id', uploadId);
+    try {
+      if (fileType === 'audio') {
+        // Process audio with Eleven Labs
+        processedText = await processAudioWithElevenLabs(fileUrl, uploadId, supabase);
+      } else if (fileType === 'document') {
+        // Process document with simple text extraction
+        processedText = await processDocumentText(fileUrl, uploadId, supabase);
+      }
+
+      // Generate summary and key points with Gemini
+      await processSummaryWithGemini(processedText, uploadId, supabase);
+
+      // Update status to completed
+      await supabase
+        .from('uploads')
+        .update({ status: 'completed' })
+        .eq('id', uploadId);
+
+    } catch (processingError) {
+      console.error('Processing error:', processingError);
+      errorMessage = processingError.message || 'Processing failed';
+      
+      // Update status to error with message
+      await supabase
+        .from('uploads')
+        .update({ 
+          status: 'error',
+          error_message: errorMessage
+        })
+        .eq('id', uploadId);
+
+      return new Response(
+        JSON.stringify({ error: errorMessage }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
 
     return new Response(
       JSON.stringify({ success: true }),
@@ -67,7 +107,7 @@ Deno.serve(async (req: Request) => {
     console.error('Processing error:', error);
     
     return new Response(
-      JSON.stringify({ error: 'Processing failed' }),
+      JSON.stringify({ error: error.message || 'Processing failed' }),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -78,12 +118,16 @@ Deno.serve(async (req: Request) => {
 
 async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, supabase: any): Promise<string> {
   if (!ELEVEN_LABS_API_KEY) {
-    throw new Error('Eleven Labs API key not configured');
+    throw new Error('Eleven Labs API key not configured. Please set ELEVEN_LABS_API_KEY in your Supabase Edge Function environment variables.');
   }
 
   try {
     // Download audio file
     const audioResponse = await fetch(fileUrl);
+    if (!audioResponse.ok) {
+      throw new Error(`Failed to download audio file: ${audioResponse.statusText}`);
+    }
+    
     const audioBuffer = await audioResponse.arrayBuffer();
 
     // Send to Eleven Labs for transcription
@@ -101,13 +145,19 @@ async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, sup
     });
 
     if (!transcriptionResponse.ok) {
+      const errorText = await transcriptionResponse.text();
+      console.error('Eleven Labs API error:', errorText);
       throw new Error(`Transcription failed: ${transcriptionResponse.statusText}`);
     }
 
     const transcriptionData = await transcriptionResponse.json();
     
+    if (!transcriptionData.text) {
+      throw new Error('No transcription text received from Eleven Labs');
+    }
+    
     // Save transcription to database
-    await supabase
+    const { error: insertError } = await supabase
       .from('transcriptions')
       .insert({
         upload_id: uploadId,
@@ -115,6 +165,11 @@ async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, sup
         timestamps: transcriptionData.segments || {},
         diarization: transcriptionData.speakers || {},
       });
+
+    if (insertError) {
+      console.error('Failed to save transcription:', insertError);
+      throw new Error('Failed to save transcription to database');
+    }
 
     return transcriptionData.text;
   } catch (error) {
@@ -127,19 +182,37 @@ async function processDocumentText(fileUrl: string, uploadId: string, supabase: 
   try {
     // Download document
     const docResponse = await fetch(fileUrl);
+    if (!docResponse.ok) {
+      throw new Error(`Failed to download document: ${docResponse.statusText}`);
+    }
+    
     const docBuffer = await docResponse.arrayBuffer();
 
     // For demonstration, we'll extract basic text
-    // In production, you would integrate with Docling API
-    const extractedText = `[Document text extracted from uploaded file. In production, this would use Docling to extract structured text from PDF/Word documents.]`;
+    // In production, you would integrate with Docling API or similar service
+    const extractedText = `Document processed successfully. File size: ${docBuffer.byteLength} bytes. 
+
+This is a placeholder for document text extraction. In a production environment, this would use a service like Docling to extract structured text from PDF/Word documents.
+
+The document has been uploaded and is ready for processing. You can implement actual text extraction by:
+1. Using a PDF parsing library for PDF files
+2. Using a Word document parser for .docx files
+3. Integrating with a document processing API like Docling
+
+For now, this serves as a demonstration of the document processing workflow.`;
 
     // Save extracted text to database
-    await supabase
+    const { error: insertError } = await supabase
       .from('document_texts')
       .insert({
         upload_id: uploadId,
         extracted_text: extractedText,
       });
+
+    if (insertError) {
+      console.error('Failed to save document text:', insertError);
+      throw new Error('Failed to save document text to database');
+    }
 
     return extractedText;
   } catch (error) {
@@ -150,7 +223,7 @@ async function processDocumentText(fileUrl: string, uploadId: string, supabase: 
 
 async function processSummaryWithGemini(text: string, uploadId: string, supabase: any): Promise<void> {
   if (!GOOGLE_GEMINI_API_KEY) {
-    throw new Error('Google Gemini API key not configured');
+    throw new Error('Google Gemini API key not configured. Please set GOOGLE_GEMINI_API_KEY in your Supabase Edge Function environment variables.');
   }
 
   try {
@@ -184,41 +257,66 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gemini API error:', errorText);
       throw new Error(`Gemini API failed: ${response.statusText}`);
     }
 
     const geminiData = await response.json();
-    const generatedText = geminiData.candidates[0]?.content?.parts[0]?.text || '';
+    const generatedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!generatedText) {
+      throw new Error('No response received from Gemini API');
+    }
     
     // Parse JSON response
     const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error('Invalid JSON response from Gemini');
+      console.error('Invalid JSON response from Gemini:', generatedText);
+      throw new Error('Invalid JSON response from Gemini API');
     }
 
-    const analysis = JSON.parse(jsonMatch[0]);
+    let analysis;
+    try {
+      analysis = JSON.parse(jsonMatch[0]);
+    } catch (parseError) {
+      console.error('Failed to parse Gemini response:', parseError);
+      throw new Error('Failed to parse AI response');
+    }
 
-    // Save summary and key points to database
-    
-    // Save summary
-    await supabase
+    if (!analysis.summary) {
+      throw new Error('No summary received from AI analysis');
+    }
+
+    // Save summary to database
+    const { error: summaryError } = await supabase
       .from('summaries')
       .insert({
         upload_id: uploadId,
         summary_text: analysis.summary,
       });
 
-    // Save key points
-    if (analysis.keyPoints && Array.isArray(analysis.keyPoints)) {
+    if (summaryError) {
+      console.error('Failed to save summary:', summaryError);
+      throw new Error('Failed to save summary to database');
+    }
+
+    // Save key points if available
+    if (analysis.keyPoints && Array.isArray(analysis.keyPoints) && analysis.keyPoints.length > 0) {
       const keyPointsData = analysis.keyPoints.map((kp: any) => ({
         upload_id: uploadId,
-        point_text: kp.point,
+        point_text: kp.point || 'Key point',
         importance_level: kp.importance || 3,
       }));
 
-      await supabase
+      const { error: keyPointsError } = await supabase
         .from('key_points')
         .insert(keyPointsData);
+
+      if (keyPointsError) {
+        console.error('Failed to save key points:', keyPointsError);
+        // Don't throw here as summary was saved successfully
+      }
     }
   } catch (error) {
     console.error('Gemini processing error:', error);

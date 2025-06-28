@@ -191,21 +191,63 @@ export default function LibraryScreen() {
       fetchUploads();
       
       // Trigger processing via edge function
-      const processingResponse = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/process-upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          uploadId: dbData.id,
-          fileType: fileType,
-          fileUrl: publicUrl,
-        }),
-      });
+      try {
+        const processingResponse = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/process-upload`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            uploadId: dbData.id,
+            fileType: fileType,
+            fileUrl: publicUrl,
+          }),
+        });
 
-      if (!processingResponse.ok) {
-        console.error('Processing request failed:', await processingResponse.text());
+        if (!processingResponse.ok) {
+          const errorData = await processingResponse.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('Processing request failed:', errorData);
+          
+          // Update the upload status to error in the database
+          await supabase
+            .from('uploads')
+            .update({ 
+              status: 'error',
+              error_message: errorData.error || 'Processing failed'
+            })
+            .eq('id', dbData.id);
+          
+          // Refresh to show the error status
+          fetchUploads();
+          
+          Alert.alert(
+            'Processing Error', 
+            `File uploaded but processing failed: ${errorData.error || 'Unknown error'}. Please check your API configuration.`
+          );
+        } else {
+          const responseData = await processingResponse.json();
+          console.log('Processing started successfully:', responseData);
+        }
+      } catch (processingError) {
+        console.error('Processing request error:', processingError);
+        
+        // Update the upload status to error in the database
+        await supabase
+          .from('uploads')
+          .update({ 
+            status: 'error',
+            error_message: 'Failed to start processing'
+          })
+          .eq('id', dbData.id);
+        
+        // Refresh to show the error status
+        fetchUploads();
+        
+        Alert.alert(
+          'Processing Error', 
+          'File uploaded but processing could not be started. Please check your connection and try again.'
+        );
       }
       
     } catch (error) {
@@ -387,6 +429,9 @@ export default function LibraryScreen() {
                 {upload.status === 'error' && upload.error_message && (
                   <View style={styles.errorSection}>
                     <Text style={styles.errorText}>{upload.error_message}</Text>
+                    <Text style={styles.errorHint}>
+                      This usually indicates missing API configuration. Please check that your Eleven Labs and Google Gemini API keys are properly configured.
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -480,6 +525,13 @@ export default function LibraryScreen() {
                 <Text style={styles.infoNumber}>3</Text>
                 <Text style={styles.infoText}>Get summaries and key points</Text>
               </View>
+            </View>
+
+            <View style={styles.configNote}>
+              <AlertCircle size={16} color="#F59E0B" />
+              <Text style={styles.configNoteText}>
+                Note: AI processing requires API keys to be configured in your Supabase project settings.
+              </Text>
             </View>
           </View>
         </View>
@@ -704,6 +756,12 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     color: '#DC2626',
+    marginBottom: 4,
+  },
+  errorHint: {
+    fontSize: 12,
+    color: '#7F1D1D',
+    fontStyle: 'italic',
   },
   // Modal styles
   modalOverlay: {
@@ -789,6 +847,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     padding: 20,
     borderRadius: 16,
+    marginBottom: 16,
   },
   infoTitle: {
     fontSize: 16,
@@ -817,5 +876,19 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#6B7280',
+  },
+  configNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  configNoteText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 16,
   },
 });

@@ -319,11 +319,31 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
   }
 }
 
+function cleanJsonString(jsonString: string): string {
+  // Remove comments (both single-line and multi-line)
+  let cleaned = jsonString
+    .replace(/\/\*[\s\S]*?\*\//g, '') // Remove /* */ comments
+    .replace(/\/\/.*$/gm, ''); // Remove // comments
+  
+  // Remove trailing commas before closing braces and brackets
+  cleaned = cleaned
+    .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas before } or ]
+    .replace(/,(\s*$)/gm, ''); // Remove trailing commas at end of lines
+  
+  // Clean up extra whitespace and newlines
+  cleaned = cleaned
+    .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+    .trim();
+  
+  return cleaned;
+}
+
 function extractJsonFromText(text: string): string | null {
   // Method 1: Try to extract from markdown JSON code block
   const markdownJsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/i);
   if (markdownJsonMatch) {
-    return markdownJsonMatch[1].trim();
+    const extracted = markdownJsonMatch[1].trim();
+    return cleanJsonString(extracted);
   }
 
   // Method 2: Try to extract from generic code block
@@ -332,7 +352,7 @@ function extractJsonFromText(text: string): string | null {
     const content = codeBlockMatch[1].trim();
     // Check if it looks like JSON (starts with { and ends with })
     if (content.startsWith('{') && content.endsWith('}')) {
-      return content;
+      return cleanJsonString(content);
     }
   }
 
@@ -341,13 +361,14 @@ function extractJsonFromText(text: string): string | null {
   const lastBrace = text.lastIndexOf('}');
   
   if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
-    return text.substring(firstBrace, lastBrace + 1);
+    const extracted = text.substring(firstBrace, lastBrace + 1);
+    return cleanJsonString(extracted);
   }
 
   // Method 4: Try the original regex approach as fallback
   const regexMatch = text.match(/\{[\s\S]*\}/);
   if (regexMatch) {
-    return regexMatch[0];
+    return cleanJsonString(regexMatch[0]);
   }
 
   return null;
@@ -372,7 +393,7 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
 
       Text: ${processedText}
 
-      Please format your response as JSON with the following structure:
+      Please format your response as valid JSON with the following structure:
       {
         "summary": "Your comprehensive summary here",
         "keyPoints": [
@@ -381,8 +402,7 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
         ]
       }
 
-      Make sure the summary captures the main themes and important concepts. 
-      For key points, assign importance levels from 1-5 (5 being most important).
+      IMPORTANT: Return ONLY valid JSON without any markdown formatting, comments, or additional text. Make sure the summary captures the main themes and important concepts. For key points, assign importance levels from 1-5 (5 being most important).
     `;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`, {
@@ -418,14 +438,14 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
     
     console.log('Raw Gemini response:', generatedText);
     
-    // Use improved JSON extraction
+    // Use improved JSON extraction with cleaning
     const jsonString = extractJsonFromText(generatedText);
     if (!jsonString) {
       console.error('No JSON found in Gemini response:', generatedText);
       throw new Error('No valid JSON found in AI response');
     }
 
-    console.log('Extracted JSON string:', jsonString);
+    console.log('Extracted and cleaned JSON string:', jsonString);
 
     let analysis;
     try {
@@ -433,7 +453,25 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
     } catch (parseError) {
       console.error('Failed to parse extracted JSON:', parseError);
       console.error('JSON string that failed to parse:', jsonString);
-      throw new Error('Failed to parse AI response - invalid JSON format');
+      
+      // Try one more aggressive cleaning attempt
+      try {
+        const aggressivelyCleaned = jsonString
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+          .replace(/\n/g, ' ') // Replace newlines with spaces
+          .replace(/\r/g, '') // Remove carriage returns
+          .replace(/\t/g, ' ') // Replace tabs with spaces
+          .replace(/\\/g, '\\\\') // Escape backslashes
+          .replace(/"/g, '\\"') // Escape quotes within strings
+          .replace(/\\"/g, '"') // Fix over-escaped quotes
+          .replace(/\\\\/g, '\\'); // Fix over-escaped backslashes
+        
+        console.log('Attempting aggressive cleaning:', aggressivelyCleaned);
+        analysis = JSON.parse(aggressivelyCleaned);
+      } catch (secondParseError) {
+        console.error('Second parse attempt also failed:', secondParseError);
+        throw new Error('Failed to parse AI response - invalid JSON format after cleaning attempts');
+      }
     }
 
     if (!analysis.summary) {

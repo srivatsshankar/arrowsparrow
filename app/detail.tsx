@@ -177,8 +177,8 @@ export default function DetailScreen() {
         <Text style={styles.errorDescription}>
           The requested content could not be found or you don't have permission to view it.
         </Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+        <TouchableOpacity style={styles.errorBackButton} onPress={() => router.back()}>
+          <Text style={styles.errorBackButtonText}>Go Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -193,7 +193,7 @@ export default function DetailScreen() {
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={24} color={colors.text} />
+          <ArrowLeft size={20} color={colors.text} />
         </TouchableOpacity>
         
         <TouchableOpacity 
@@ -431,13 +431,13 @@ function createStyles(colors: any) {
       lineHeight: 24,
       marginBottom: 24,
     },
-    backButton: {
+    errorBackButton: {
       backgroundColor: colors.primary,
       paddingHorizontal: 24,
       paddingVertical: 12,
       borderRadius: 8,
     },
-    backButtonText: {
+    errorBackButtonText: {
       color: '#FFFFFF',
       fontSize: 16,
       fontWeight: '600',
@@ -458,6 +458,20 @@ function createStyles(colors: any) {
       shadowOpacity: 0.05,
       shadowRadius: 2,
       elevation: 2,
+    },
+    // Back button - matching menu button style exactly
+    backButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 10,
+      backgroundColor: colors.border + '40',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
     },
     menuButton: {
       width: 38,

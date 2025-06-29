@@ -87,13 +87,72 @@ export default function DetailScreen() {
       uploadId: upload.id,
       fileName: upload.file_name,
       fileUrl: upload.file_url,
-      userId: user.id
+      userId: user.id,
+      uploadUserId: upload.user_id
     });
+
+    // Verify ownership before proceeding
+    if (upload.user_id !== user.id) {
+      console.error('User ID mismatch:', { currentUser: user.id, uploadOwner: upload.user_id });
+      Alert.alert('Error', 'You do not have permission to delete this item');
+      return;
+    }
     
     setDeleting(true);
     
     try {
-      // Step 1: Try to delete from storage first (optional - continue even if this fails)
+      // Step 1: Delete related records first (to avoid foreign key constraints)
+      console.log('Deleting related records...');
+      
+      // Delete transcriptions
+      const { error: transcriptionsError } = await supabase
+        .from('transcriptions')
+        .delete()
+        .eq('upload_id', upload.id);
+      
+      if (transcriptionsError) {
+        console.error('Error deleting transcriptions:', transcriptionsError);
+      } else {
+        console.log('Transcriptions deleted successfully');
+      }
+
+      // Delete document texts
+      const { error: documentTextsError } = await supabase
+        .from('document_texts')
+        .delete()
+        .eq('upload_id', upload.id);
+      
+      if (documentTextsError) {
+        console.error('Error deleting document texts:', documentTextsError);
+      } else {
+        console.log('Document texts deleted successfully');
+      }
+
+      // Delete summaries
+      const { error: summariesError } = await supabase
+        .from('summaries')
+        .delete()
+        .eq('upload_id', upload.id);
+      
+      if (summariesError) {
+        console.error('Error deleting summaries:', summariesError);
+      } else {
+        console.log('Summaries deleted successfully');
+      }
+
+      // Delete key points
+      const { error: keyPointsError } = await supabase
+        .from('key_points')
+        .delete()
+        .eq('upload_id', upload.id);
+      
+      if (keyPointsError) {
+        console.error('Error deleting key points:', keyPointsError);
+      } else {
+        console.log('Key points deleted successfully');
+      }
+
+      // Step 2: Try to delete from storage (optional - continue even if this fails)
       let storageDeleted = false;
       try {
         // Extract file path from the URL
@@ -129,8 +188,10 @@ export default function DetailScreen() {
         console.error('Storage deletion failed:', storageError);
       }
 
-      // Step 2: Delete the database record (this is the critical part)
+      // Step 3: Delete the main upload record
       console.log('Attempting to delete upload record from database...');
+      
+      // Use service role key for this operation to bypass RLS if needed
       const { error: dbError } = await supabase
         .from('uploads')
         .delete()
@@ -144,7 +205,22 @@ export default function DetailScreen() {
 
       console.log('Upload record successfully deleted from database');
       
-      // Step 3: Close modal and navigate back with refresh trigger
+      // Step 4: Verify deletion by trying to fetch the record
+      console.log('Verifying deletion...');
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('uploads')
+        .select('id')
+        .eq('id', upload.id)
+        .single();
+
+      if (verifyError && verifyError.code === 'PGRST116') {
+        console.log('Deletion verified - record no longer exists');
+      } else if (verifyData) {
+        console.error('WARNING: Record still exists after deletion!', verifyData);
+        throw new Error('Record was not properly deleted from database');
+      }
+      
+      // Step 5: Close modal and navigate back with refresh trigger
       setShowDeleteModal(false);
       setDeleting(false);
       

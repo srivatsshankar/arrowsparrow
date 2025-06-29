@@ -75,56 +75,62 @@ export default function DetailScreen() {
   };
 
   const handleDelete = async () => {
+    console.log('=== DELETE FUNCTION CALLED ===');
+    
     if (!upload || !user) {
       console.error('No upload or user found for deletion');
       Alert.alert('Error', 'Unable to delete: missing upload or user information');
       return;
     }
 
-    console.log('Starting deletion process for upload:', upload.id);
+    console.log('Starting deletion process for upload:', {
+      uploadId: upload.id,
+      fileName: upload.file_name,
+      fileUrl: upload.file_url,
+      userId: user.id
+    });
+    
     setDeleting(true);
     
     try {
-      // Step 1: Extract file path from URL for storage deletion
-      let filePath = '';
+      // Step 1: Try to delete from storage first (optional - continue even if this fails)
+      let storageDeleted = false;
       try {
+        // Extract file path from the URL
         const url = new URL(upload.file_url);
-        // Extract the path after the bucket name
-        const pathSegments = url.pathname.split('/');
-        const objectIndex = pathSegments.findIndex(segment => segment === 'object');
+        console.log('Full file URL:', upload.file_url);
+        console.log('URL pathname:', url.pathname);
         
-        if (objectIndex !== -1 && objectIndex < pathSegments.length - 2) {
-          // Skip 'object', 'public', 'uploads' to get to the actual file path
-          const relevantSegments = pathSegments.slice(objectIndex + 3);
-          filePath = relevantSegments.join('/');
-        }
+        // For Supabase storage URLs, the path typically looks like:
+        // /storage/v1/object/public/uploads/user-id/filename
+        const pathParts = url.pathname.split('/');
+        console.log('Path parts:', pathParts);
         
-        console.log('Extracted file path for deletion:', filePath);
-      } catch (urlError) {
-        console.error('Error parsing file URL:', urlError);
-        // Continue with database deletion even if we can't parse the URL
-      }
+        // Find the uploads bucket part and extract everything after it
+        const uploadsIndex = pathParts.findIndex(part => part === 'uploads');
+        if (uploadsIndex !== -1 && uploadsIndex < pathParts.length - 1) {
+          const filePath = pathParts.slice(uploadsIndex + 1).join('/');
+          console.log('Extracted file path for storage deletion:', filePath);
+          
+          const { error: storageError } = await supabase.storage
+            .from('uploads')
+            .remove([filePath]);
 
-      // Step 2: Delete the file from storage if we have a valid path
-      if (filePath) {
-        console.log('Attempting to delete file from storage:', filePath);
-        const { error: storageError } = await supabase.storage
-          .from('uploads')
-          .remove([filePath]);
-
-        if (storageError) {
-          console.error('Error deleting file from storage:', storageError);
-          // Log the error but continue with database deletion
-          console.log('Continuing with database deletion despite storage error');
+          if (storageError) {
+            console.error('Storage deletion error:', storageError);
+          } else {
+            console.log('File successfully deleted from storage');
+            storageDeleted = true;
+          }
         } else {
-          console.log('File successfully deleted from storage');
+          console.warn('Could not extract file path from URL for storage deletion');
         }
-      } else {
-        console.warn('Could not determine file path, skipping storage deletion');
+      } catch (storageError) {
+        console.error('Storage deletion failed:', storageError);
       }
 
-      // Step 3: Delete the upload record from database (this will cascade delete related records)
-      console.log('Attempting to delete upload record from database');
+      // Step 2: Delete the database record (this is the critical part)
+      console.log('Attempting to delete upload record from database...');
       const { error: dbError } = await supabase
         .from('uploads')
         .delete()
@@ -138,18 +144,27 @@ export default function DetailScreen() {
 
       console.log('Upload record successfully deleted from database');
       
-      // Step 4: Show success message and navigate back
-      Alert.alert('Success', 'Item deleted successfully', [
-        {
-          text: 'OK',
-          onPress: () => {
-            router.back();
+      // Step 3: Show success and navigate back
+      setShowDeleteModal(false);
+      
+      Alert.alert(
+        'Success', 
+        `Item "${upload.file_name}" has been deleted successfully.${storageDeleted ? '' : ' (Note: File may still exist in storage)'}`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              console.log('Navigating back after successful deletion');
+              router.back();
+            }
           }
-        }
-      ]);
+        ]
+      );
       
     } catch (error) {
-      console.error('Error during deletion process:', error);
+      console.error('Deletion process failed:', error);
+      setShowDeleteModal(false);
+      
       Alert.alert(
         'Delete Failed', 
         `Failed to delete the item: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
@@ -157,8 +172,23 @@ export default function DetailScreen() {
       );
     } finally {
       setDeleting(false);
-      setShowDeleteModal(false);
     }
+  };
+
+  const handleDeletePress = () => {
+    console.log('=== DELETE BUTTON PRESSED ===');
+    setShowDropdownMenu(false);
+    
+    // Add a small delay to ensure dropdown closes smoothly
+    setTimeout(() => {
+      console.log('Opening delete confirmation modal');
+      setShowDeleteModal(true);
+    }, 150);
+  };
+
+  const handleConfirmDelete = () => {
+    console.log('=== DELETE CONFIRMED ===');
+    handleDelete();
   };
 
   const formatDate = (dateString: string) => {
@@ -243,7 +273,10 @@ export default function DetailScreen() {
         
         <TouchableOpacity 
           style={styles.menuButton} 
-          onPress={() => setShowDropdownMenu(true)}
+          onPress={() => {
+            console.log('Menu button pressed');
+            setShowDropdownMenu(true);
+          }}
           activeOpacity={0.7}
         >
           <Menu size={20} color={colors.text} />
@@ -372,19 +405,15 @@ export default function DetailScreen() {
         <TouchableOpacity 
           style={styles.dropdownOverlay}
           activeOpacity={1}
-          onPress={() => setShowDropdownMenu(false)}
+          onPress={() => {
+            console.log('Dropdown overlay pressed - closing menu');
+            setShowDropdownMenu(false);
+          }}
         >
           <View style={styles.dropdownMenu}>
             <TouchableOpacity
               style={styles.dropdownItem}
-              onPress={() => {
-                console.log('Delete option pressed');
-                setShowDropdownMenu(false);
-                // Add a small delay to ensure dropdown closes before modal opens
-                setTimeout(() => {
-                  setShowDeleteModal(true);
-                }, 100);
-              }}
+              onPress={handleDeletePress}
               activeOpacity={0.7}
             >
               <Trash2 size={20} color={colors.error} />
@@ -399,7 +428,12 @@ export default function DetailScreen() {
         visible={showDeleteModal}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => !deleting && setShowDeleteModal(false)}
+        onRequestClose={() => {
+          if (!deleting) {
+            console.log('Delete modal dismissed');
+            setShowDeleteModal(false);
+          }
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.deleteModal}>
@@ -415,7 +449,12 @@ export default function DetailScreen() {
             <View style={styles.deleteActions}>
               <TouchableOpacity
                 style={[styles.cancelButton, deleting && styles.buttonDisabled]}
-                onPress={() => !deleting && setShowDeleteModal(false)}
+                onPress={() => {
+                  if (!deleting) {
+                    console.log('Delete cancelled');
+                    setShowDeleteModal(false);
+                  }
+                }}
                 disabled={deleting}
                 activeOpacity={0.7}
               >
@@ -424,10 +463,7 @@ export default function DetailScreen() {
               
               <TouchableOpacity
                 style={[styles.deleteButton, deleting && styles.deleteButtonDisabled]}
-                onPress={() => {
-                  console.log('Delete confirmed, calling handleDelete');
-                  handleDelete();
-                }}
+                onPress={handleConfirmDelete}
                 disabled={deleting}
                 activeOpacity={0.7}
               >

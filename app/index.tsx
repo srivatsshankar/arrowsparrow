@@ -51,8 +51,44 @@ export default function LibraryScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
+  
+  // Animation values for modal
+  const [modalOpacity] = useState(new Animated.Value(0));
+  const [modalScale] = useState(new Animated.Value(0.9));
 
   const styles = createStyles(colors);
+
+  // Handle modal animations
+  useEffect(() => {
+    if (showUploadModal) {
+      Animated.parallel([
+        Animated.timing(modalOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.spring(modalScale, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(modalOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(modalScale, {
+          toValue: 0.9,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [showUploadModal]);
 
   const fetchUploads = async () => {
     if (!user) return;
@@ -747,18 +783,31 @@ export default function LibraryScreen() {
       <Modal
         visible={showUploadModal}
         transparent={true}
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setShowUploadModal(false)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowUploadModal(false)}
+        <Animated.View 
+          style={[
+            styles.modalOverlay,
+            {
+              opacity: modalOpacity,
+            }
+          ]}
         >
           <TouchableOpacity 
-            style={styles.modalContainer}
+            style={styles.modalBackdrop}
             activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
+            onPress={() => setShowUploadModal(false)}
+          />
+          
+          <Animated.View 
+            style={[
+              styles.modalContainer,
+              {
+                transform: [{ scale: modalScale }],
+                opacity: modalOpacity,
+              }
+            ]}
           >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Upload Content</Text>
@@ -820,8 +869,8 @@ export default function LibraryScreen() {
                 </View>
               </TouchableOpacity>
             </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
       </Modal>
     </>
   );
@@ -1167,20 +1216,33 @@ function createStyles(colors: any) {
       marginVertical: 4,
       marginHorizontal: 8,
     },
-    // Modal styles
+    // Modal styles - Updated for proper overlay
     modalOverlay: {
       flex: 1,
-      backgroundColor: colors.overlay,
-      justifyContent: 'flex-end',
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    modalBackdrop: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
     },
     modalContainer: {
       backgroundColor: colors.surface,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      paddingTop: 20,
-      paddingHorizontal: 20,
-      paddingBottom: 32,
+      borderRadius: 24,
+      padding: 24,
+      width: '100%',
+      maxWidth: 400,
       maxHeight: '80%',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 10,
     },
     modalHeader: {
       flexDirection: 'row',

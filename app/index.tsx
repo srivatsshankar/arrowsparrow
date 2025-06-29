@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Modal,
   Image,
+  Animated,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
@@ -41,6 +42,13 @@ export default function LibraryScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadFileName, setUploadFileName] = useState('');
+  const [uploadStage, setUploadStage] = useState<'uploading' | 'processing' | 'complete'>('uploading');
+
+  // Animation values for progress indicator
+  const progressAnim = useState(new Animated.Value(0))[0];
+  const pulseAnim = useState(new Animated.Value(1))[0];
 
   const styles = createStyles(colors);
 
@@ -86,6 +94,47 @@ export default function LibraryScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchUploads();
+  };
+
+  // Animate progress bar
+  const animateProgress = (toValue: number) => {
+    Animated.timing(progressAnim, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  // Pulse animation for processing stage
+  const startPulseAnimation = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  };
+
+  const stopPulseAnimation = () => {
+    pulseAnim.stopAnimation();
+    pulseAnim.setValue(1);
+  };
+
+  const resetUploadState = () => {
+    setUploading(false);
+    setUploadProgress(0);
+    setUploadFileName('');
+    setUploadStage('uploading');
+    progressAnim.setValue(0);
+    stopPulseAnimation();
   };
 
   const handleMenuItemPress = (action: string) => {
@@ -177,12 +226,26 @@ export default function LibraryScreen() {
   const handleFileUpload = async (uri: string, fileType: 'audio' | 'document', fileName: string) => {
     if (!user) return;
 
+    // Initialize upload state
     setUploading(true);
+    setUploadFileName(fileName);
+    setUploadStage('uploading');
+    setUploadProgress(0);
+    animateProgress(0);
+
     try {
+      // Simulate initial progress
+      setUploadProgress(10);
+      animateProgress(0.1);
+
       // Get file info
       const response = await fetch(uri);
       const blob = await response.blob();
       const fileSize = blob.size;
+
+      // Update progress
+      setUploadProgress(30);
+      animateProgress(0.3);
 
       // Upload to Supabase Storage
       const fileExt = fileName.split('.').pop();
@@ -194,10 +257,18 @@ export default function LibraryScreen() {
 
       if (uploadError) throw uploadError;
 
+      // Update progress
+      setUploadProgress(60);
+      animateProgress(0.6);
+
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('uploads')
         .getPublicUrl(filePath);
+
+      // Update progress
+      setUploadProgress(80);
+      animateProgress(0.8);
 
       // Save to database
       const { data: dbData, error: dbError } = await supabase
@@ -215,8 +286,16 @@ export default function LibraryScreen() {
 
       if (dbError) throw dbError;
 
-      Alert.alert('Success', 'File uploaded successfully! Processing will begin shortly.');
-      
+      // Complete upload stage
+      setUploadProgress(100);
+      animateProgress(1);
+
+      // Wait a moment then switch to processing stage
+      setTimeout(() => {
+        setUploadStage('processing');
+        startPulseAnimation();
+      }, 500);
+
       // Refresh the uploads list
       fetchUploads();
       
@@ -251,13 +330,29 @@ export default function LibraryScreen() {
           // Refresh to show the error status
           fetchUploads();
           
-          Alert.alert(
-            'Processing Error', 
-            `File uploaded but processing failed: ${errorData.error || 'Unknown error'}. Please check your API configuration.`
-          );
+          // Show completion with error
+          setUploadStage('complete');
+          stopPulseAnimation();
+          
+          setTimeout(() => {
+            resetUploadState();
+            Alert.alert(
+              'Processing Error', 
+              `File uploaded but processing failed: ${errorData.error || 'Unknown error'}. Please check your API configuration.`
+            );
+          }, 1500);
         } else {
           const responseData = await processingResponse.json();
           console.log('Processing started successfully:', responseData);
+          
+          // Show completion
+          setUploadStage('complete');
+          stopPulseAnimation();
+          
+          setTimeout(() => {
+            resetUploadState();
+            Alert.alert('Success', 'File uploaded successfully! Processing will begin shortly.');
+          }, 1500);
         }
       } catch (processingError) {
         console.error('Processing request error:', processingError);
@@ -274,17 +369,23 @@ export default function LibraryScreen() {
         // Refresh to show the error status
         fetchUploads();
         
-        Alert.alert(
-          'Processing Error', 
-          'File uploaded but processing could not be started. Please check your connection and try again.'
-        );
+        // Show completion with error
+        setUploadStage('complete');
+        stopPulseAnimation();
+        
+        setTimeout(() => {
+          resetUploadState();
+          Alert.alert(
+            'Processing Error', 
+            'File uploaded but processing could not be started. Please check your connection and try again.'
+          );
+        }, 1500);
       }
       
     } catch (error) {
       console.error('Upload error:', error);
+      resetUploadState();
       Alert.alert('Error', 'Failed to upload file');
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -335,6 +436,62 @@ export default function LibraryScreen() {
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const renderUploadProgress = () => {
+    if (!uploading) return null;
+
+    return (
+      <View style={styles.uploadProgressContainer}>
+        <View style={styles.uploadProgressHeader}>
+          <View style={styles.uploadProgressInfo}>
+            <Animated.View style={[styles.uploadProgressIcon, { transform: [{ scale: pulseAnim }] }]}>
+              {uploadStage === 'uploading' && <Upload size={20} color={colors.primary} />}
+              {uploadStage === 'processing' && <Loader size={20} color={colors.warning} />}
+              {uploadStage === 'complete' && <CheckCircle size={20} color={colors.success} />}
+            </Animated.View>
+            <View style={styles.uploadProgressText}>
+              <Text style={styles.uploadProgressTitle} numberOfLines={1}>
+                {uploadFileName}
+              </Text>
+              <Text style={styles.uploadProgressStatus}>
+                {uploadStage === 'uploading' && `Uploading... ${uploadProgress}%`}
+                {uploadStage === 'processing' && 'Processing with AI...'}
+                {uploadStage === 'complete' && 'Upload complete!'}
+              </Text>
+            </View>
+          </View>
+        </View>
+        
+        {uploadStage === 'uploading' && (
+          <View style={styles.progressBarContainer}>
+            <View style={styles.progressBarBackground}>
+              <Animated.View 
+                style={[
+                  styles.progressBarFill,
+                  {
+                    width: progressAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0%', '100%'],
+                    }),
+                  }
+                ]} 
+              />
+            </View>
+          </View>
+        )}
+        
+        {uploadStage === 'processing' && (
+          <View style={styles.processingIndicator}>
+            <View style={styles.processingDots}>
+              <Animated.View style={[styles.processingDot, { opacity: pulseAnim }]} />
+              <Animated.View style={[styles.processingDot, { opacity: pulseAnim }]} />
+              <Animated.View style={[styles.processingDot, { opacity: pulseAnim }]} />
+            </View>
+          </View>
+        )}
+      </View>
+    );
   };
 
   if (loading) {
@@ -393,12 +550,8 @@ export default function LibraryScreen() {
           </Text>
         </View>
 
-        {uploading && (
-          <View style={styles.uploadingContainer}>
-            <Loader size={20} color={colors.primary} />
-            <Text style={styles.uploadingText}>Uploading and processing...</Text>
-          </View>
-        )}
+        {/* Upload Progress Indicator */}
+        {renderUploadProgress()}
 
         {uploads.length === 0 ? (
           <View style={styles.emptyState}>
@@ -738,21 +891,77 @@ function createStyles(colors: any) {
       fontSize: 16,
       color: colors.textSecondary,
     },
-    uploadingContainer: {
+    // Upload Progress Indicator
+    uploadProgressContainer: {
+      backgroundColor: colors.surface,
+      marginHorizontal: 16,
+      marginTop: 12,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    uploadProgressHeader: {
+      marginBottom: 12,
+    },
+    uploadProgressInfo: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      padding: 12, // Reduced from 16
-      backgroundColor: colors.primary + '15',
-      marginHorizontal: 16, // Reduced from 24
-      marginTop: 12, // Reduced from 16
-      borderRadius: 12,
-      gap: 12,
     },
-    uploadingText: {
+    uploadProgressIcon: {
+      width: 40,
+      height: 40,
+      backgroundColor: colors.primary + '15',
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    uploadProgressText: {
+      flex: 1,
+    },
+    uploadProgressTitle: {
       fontSize: 16,
-      color: colors.primary,
-      fontWeight: '500',
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 2,
+    },
+    uploadProgressStatus: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    progressBarContainer: {
+      marginTop: 8,
+    },
+    progressBarBackground: {
+      height: 6,
+      backgroundColor: colors.border + '60',
+      borderRadius: 3,
+      overflow: 'hidden',
+    },
+    progressBarFill: {
+      height: '100%',
+      backgroundColor: colors.primary,
+      borderRadius: 3,
+    },
+    processingIndicator: {
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    processingDots: {
+      flexDirection: 'row',
+      gap: 6,
+    },
+    processingDot: {
+      width: 8,
+      height: 8,
+      backgroundColor: colors.warning,
+      borderRadius: 4,
     },
     emptyState: {
       flex: 1,

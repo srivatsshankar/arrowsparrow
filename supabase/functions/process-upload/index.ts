@@ -430,10 +430,52 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
     }
 
     const geminiData = await response.json();
-    const generatedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    if (!generatedText) {
-      throw new Error('No response received from Gemini API');
+    // Enhanced response validation
+    console.log('Full Gemini API response:', JSON.stringify(geminiData, null, 2));
+    
+    // Check if candidates array exists and is not empty
+    if (!geminiData.candidates || !Array.isArray(geminiData.candidates) || geminiData.candidates.length === 0) {
+      console.error('No candidates found in Gemini response. This may indicate content was blocked by safety filters or the API could not generate a response.');
+      
+      // Check for safety ratings or other blocking reasons
+      if (geminiData.promptFeedback) {
+        console.error('Prompt feedback:', geminiData.promptFeedback);
+        if (geminiData.promptFeedback.blockReason) {
+          throw new Error(`Gemini API blocked the request: ${geminiData.promptFeedback.blockReason}`);
+        }
+      }
+      
+      throw new Error('No response candidates received from Gemini API. The content may have been blocked by safety filters or the API was unable to generate a response.');
+    }
+    
+    const candidate = geminiData.candidates[0];
+    
+    // Check if the candidate has content
+    if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
+      console.error('No content parts found in candidate:', candidate);
+      
+      // Check for finish reason
+      if (candidate.finishReason) {
+        console.error('Candidate finish reason:', candidate.finishReason);
+        if (candidate.finishReason === 'SAFETY') {
+          throw new Error('Gemini API response was blocked due to safety concerns');
+        } else if (candidate.finishReason === 'RECITATION') {
+          throw new Error('Gemini API response was blocked due to recitation concerns');
+        } else if (candidate.finishReason === 'OTHER') {
+          throw new Error('Gemini API response was blocked for other reasons');
+        }
+      }
+      
+      throw new Error('No content received from Gemini API candidate');
+    }
+    
+    const generatedText = candidate.content.parts[0].text;
+    
+    // Check if generated text exists and is not empty/whitespace
+    if (!generatedText || typeof generatedText !== 'string' || generatedText.trim().length === 0) {
+      console.error('Generated text is empty or invalid:', generatedText);
+      throw new Error('No valid text content received from Gemini API');
     }
     
     console.log('Raw Gemini response:', generatedText);

@@ -14,7 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { ArrowLeft, FileText, Mic, Clock, User, Star, MessageSquare, List, Trash2, MoveVertical as MoreVertical, X } from 'lucide-react-native';
+import { ArrowLeft, FileText, Mic, Star, MessageSquare, List, Trash2, Menu, X } from 'lucide-react-native';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {
@@ -33,7 +33,7 @@ export default function DetailScreen() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [showDropdownMenu, setShowDropdownMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<'content' | 'summary' | 'keypoints'>('content');
 
   const styles = createStyles(colors);
@@ -186,56 +186,57 @@ export default function DetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header - Simple with back button and menu */}
       <View style={styles.header}>
         <TouchableOpacity 
-          style={styles.backIconButton} 
+          style={styles.backButton} 
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {upload.file_name}
-          </Text>
-          <Text style={styles.headerSubtitle}>
-            {formatFileSize(upload.file_size)} • {formatDate(upload.created_at)}
-          </Text>
-        </View>
+        
         <TouchableOpacity 
-          style={styles.optionsButton} 
-          onPress={() => setShowOptionsModal(true)}
+          style={styles.menuButton} 
+          onPress={() => setShowDropdownMenu(true)}
           activeOpacity={0.7}
         >
-          <MoreVertical size={20} color={colors.textSecondary} />
+          <Menu size={20} color={colors.text} />
         </TouchableOpacity>
       </View>
 
-      {/* File Info Card */}
-      <View style={styles.fileInfoCard}>
-        <View style={styles.fileIconContainer}>
-          {upload.file_type === 'audio' ? (
-            <Mic size={24} color={colors.primary} />
-          ) : (
-            <FileText size={24} color={colors.primary} />
-          )}
-        </View>
-        <View style={styles.fileInfo}>
-          <Text style={styles.fileType}>
-            {upload.file_type === 'audio' ? 'Audio Recording' : 'Document'}
-          </Text>
-          <View style={styles.statusBadge}>
-            <View style={[
-              styles.statusDot, 
-              { backgroundColor: upload.status === 'completed' ? colors.success : colors.warning }
-            ]} />
-            <Text style={[
-              styles.statusText,
-              { color: upload.status === 'completed' ? colors.success : colors.warning }
-            ]}>
-              {upload.status === 'completed' ? 'Processed' : 'Processing'}
+      {/* File Information Section */}
+      <View style={styles.fileInfoSection}>
+        <View style={styles.fileInfoCard}>
+          <View style={styles.fileIconContainer}>
+            {upload.file_type === 'audio' ? (
+              <Mic size={24} color={colors.primary} />
+            ) : (
+              <FileText size={24} color={colors.primary} />
+            )}
+          </View>
+          <View style={styles.fileInfo}>
+            <Text style={styles.fileName} numberOfLines={2}>
+              {upload.file_name}
             </Text>
+            <Text style={styles.fileType}>
+              {upload.file_type === 'audio' ? 'Audio Recording' : 'Document'}
+            </Text>
+            <Text style={styles.fileMetadata}>
+              {formatFileSize(upload.file_size)} • {formatDate(upload.created_at)}
+            </Text>
+            <View style={styles.statusBadge}>
+              <View style={[
+                styles.statusDot, 
+                { backgroundColor: upload.status === 'completed' ? colors.success : colors.warning }
+              ]} />
+              <Text style={[
+                styles.statusText,
+                { color: upload.status === 'completed' ? colors.success : colors.warning }
+              ]}>
+                {upload.status === 'completed' ? 'Processed' : 'Processing'}
+              </Text>
+            </View>
           </View>
         </View>
       </View>
@@ -327,39 +328,32 @@ export default function DetailScreen() {
         )}
       </ScrollView>
 
-      {/* Options Modal */}
+      {/* Dropdown Menu Modal */}
       <Modal
-        visible={showOptionsModal}
+        visible={showDropdownMenu}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowOptionsModal(false)}
+        onRequestClose={() => setShowDropdownMenu(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.optionsModal}>
-            <View style={styles.optionsHeader}>
-              <Text style={styles.optionsTitle}>Options</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setShowOptionsModal(false)}
-                activeOpacity={0.7}
-              >
-                <X size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            
+        <TouchableOpacity 
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setShowDropdownMenu(false)}
+        >
+          <View style={styles.dropdownMenu}>
             <TouchableOpacity
-              style={styles.optionItem}
+              style={styles.dropdownItem}
               onPress={() => {
-                setShowOptionsModal(false);
+                setShowDropdownMenu(false);
                 setShowDeleteModal(true);
               }}
               activeOpacity={0.7}
             >
               <Trash2 size={20} color={colors.error} />
-              <Text style={styles.deleteOptionText}>Delete Item</Text>
+              <Text style={[styles.dropdownItemText, { color: colors.error }]}>Delete Item</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Delete Confirmation Modal */}
@@ -459,41 +453,59 @@ function createStyles(colors: any) {
       fontSize: 16,
       fontWeight: '600',
     },
+    // Header - Simple top bar
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      padding: 24,
-      paddingTop: 60,
+      justifyContent: 'space-between',
       backgroundColor: colors.surface,
+      paddingHorizontal: 16,
+      paddingTop: 50,
+      paddingBottom: 12,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 2,
     },
-    backIconButton: {
-      padding: 8,
-      marginRight: 12,
+    backButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 10,
+      backgroundColor: colors.border + '40',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
     },
-    headerContent: {
-      flex: 1,
+    menuButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 10,
+      backgroundColor: colors.border + '40',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
     },
-    headerTitle: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: colors.text,
-      marginBottom: 4,
-    },
-    headerSubtitle: {
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
-    optionsButton: {
-      padding: 8,
-      marginLeft: 12,
+    // File Information Section
+    fileInfoSection: {
+      backgroundColor: colors.surface,
+      paddingHorizontal: 16,
+      paddingBottom: 16,
     },
     fileInfoCard: {
       flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      margin: 24,
+      alignItems: 'flex-start',
+      backgroundColor: colors.background,
       padding: 20,
       borderRadius: 16,
       borderWidth: 1,
@@ -516,11 +528,23 @@ function createStyles(colors: any) {
     fileInfo: {
       flex: 1,
     },
-    fileType: {
-      fontSize: 16,
-      fontWeight: '600',
+    fileName: {
+      fontSize: 18,
+      fontWeight: '700',
       color: colors.text,
       marginBottom: 4,
+      lineHeight: 24,
+    },
+    fileType: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.primary,
+      marginBottom: 4,
+    },
+    fileMetadata: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginBottom: 8,
     },
     statusBadge: {
       flexDirection: 'row',
@@ -539,7 +563,8 @@ function createStyles(colors: any) {
     tabContainer: {
       flexDirection: 'row',
       backgroundColor: colors.surface,
-      marginHorizontal: 24,
+      marginHorizontal: 16,
+      marginTop: 8,
       borderRadius: 12,
       padding: 4,
       borderWidth: 1,
@@ -568,8 +593,7 @@ function createStyles(colors: any) {
     },
     contentContainer: {
       flex: 1,
-      margin: 24,
-      marginTop: 16,
+      margin: 16,
     },
     contentSection: {
       backgroundColor: colors.surface,
@@ -632,51 +656,45 @@ function createStyles(colors: any) {
       color: colors.textSecondary,
       marginTop: 12,
     },
+    // Dropdown menu styles (matching library screen)
+    dropdownOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-start',
+      alignItems: 'flex-end',
+      paddingTop: 110,
+      paddingRight: 16,
+    },
+    dropdownMenu: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingVertical: 8,
+      minWidth: 160,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    dropdownItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 12,
+    },
+    dropdownItemText: {
+      fontSize: 16,
+      fontWeight: '500',
+    },
     // Modal styles
     modalOverlay: {
       flex: 1,
       backgroundColor: colors.overlay,
       justifyContent: 'center',
       alignItems: 'center',
-    },
-    optionsModal: {
-      backgroundColor: colors.surface,
-      borderRadius: 16,
-      padding: 20,
-      marginHorizontal: 24,
-      minWidth: 280,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.25,
-      shadowRadius: 8,
-      elevation: 8,
-    },
-    optionsHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 16,
-    },
-    optionsTitle: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: colors.text,
-    },
-    closeButton: {
-      padding: 4,
-    },
-    optionItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingVertical: 16,
-      paddingHorizontal: 12,
-      borderRadius: 8,
-      gap: 12,
-    },
-    deleteOptionText: {
-      fontSize: 16,
-      color: colors.error,
-      fontWeight: '500',
     },
     deleteModal: {
       backgroundColor: colors.surface,

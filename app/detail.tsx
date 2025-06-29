@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
@@ -105,7 +106,7 @@ export default function DetailScreen() {
 
   const styles = createStyles(colors);
 
-  const scrollToSection = (sectionRef: React.RefObject<View>) => {
+  const scrollToSection = (sectionRef: React.RefObject<View | null>) => {
     if (sectionRef.current && scrollViewRef.current) {
       sectionRef.current.measureLayout(
         scrollViewRef.current.getInnerViewNode?.() || scrollViewRef.current,
@@ -123,18 +124,43 @@ export default function DetailScreen() {
     }
   }, [id, user]);
 
+  // Stop audio when screen loses focus (user navigates away)
+  useFocusEffect(
+    useCallback(() => {
+      // Screen is focused - no action needed
+      return () => {
+        // Screen is losing focus - stop and cleanup audio
+        if (sound) {
+          console.log('Screen losing focus - stopping audio');
+          sound.stopAsync().then(() => {
+            setIsPlaying(false);
+            setCurrentPosition(0);
+            setActiveSegmentId(null);
+          }).catch((error) => {
+            console.error('Error stopping audio on focus loss:', error);
+          });
+        }
+      };
+    }, [sound])
+  );
+
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
       if (sound) {
-        sound.unloadAsync();
+        sound.stopAsync().then(() => {
+          sound.unloadAsync();
+        }).catch((error) => {
+          console.error('Error stopping audio on cleanup:', error);
+          sound.unloadAsync();
+        });
       }
     };
   }, [sound]);
 
   // Audio position tracking for segment-level highlighting
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     
     if (sound && isPlaying) {
       interval = setInterval(async () => {
@@ -500,7 +526,7 @@ export default function DetailScreen() {
   };
 
   // Load and play audio
-  const loadAudio = async () => {
+  const loadAudio = async (shouldAutoPlay: boolean = true) => {
     if (!upload || upload.file_type !== 'audio') return;
 
     setAudioLoading(true);
@@ -517,11 +543,12 @@ export default function DetailScreen() {
 
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: upload.file_url },
-        { shouldPlay: false, isLooping: false },
+        { shouldPlay: shouldAutoPlay, isLooping: false },
         onAudioStatusUpdate
       );
       
       setSound(newSound);
+      console.log(`Audio loaded${shouldAutoPlay ? ' and playback started automatically' : ' without auto-play'}`);
     } catch (error) {
       console.error('Error loading audio:', error);
       Alert.alert('Error', 'Failed to load audio file');
@@ -532,18 +559,30 @@ export default function DetailScreen() {
 
   const onAudioStatusUpdate = (status: any) => {
     if (status.isLoaded) {
-      setDuration(status.durationMillis ? status.durationMillis / 1000 : 0);
+      const newDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
+      const newPosition = status.positionMillis !== undefined ? status.positionMillis / 1000 : 0;
+      
+      // Only update duration if it changed to avoid unnecessary re-renders
+      if (Math.abs(newDuration - duration) > 0.1) {
+        console.log(`Duration updated: ${newDuration.toFixed(2)}s`);
+        setDuration(newDuration);
+      }
+      
+      // Only update if the sound is actually playing to get smooth updates
       setIsPlaying(status.isPlaying);
       
+      // Update position (this will be updated frequently during playback)
       if (status.positionMillis !== undefined) {
-        setCurrentPosition(status.positionMillis / 1000);
+        setCurrentPosition(newPosition);
       }
     }
   };
 
   const togglePlayback = async () => {
     if (!sound) {
+      console.log('No sound loaded, loading audio and starting playback...');
       await loadAudio();
+      // After loading, the audio will start playing automatically via loadAudio
       return;
     }
 
@@ -551,8 +590,10 @@ export default function DetailScreen() {
       const status = await sound.getStatusAsync();
       if (status.isLoaded) {
         if (isPlaying) {
+          console.log('Pausing audio...');
           await sound.pauseAsync();
         } else {
+          console.log('Starting audio playback...');
           await sound.playAsync();
         }
       }
@@ -562,12 +603,37 @@ export default function DetailScreen() {
   };
 
   const seekToPosition = async (seconds: number) => {
-    if (!sound) return;
+    if (!sound) {
+      console.log('Cannot seek - no sound loaded');
+      return;
+    }
 
     try {
-      await sound.setPositionAsync(seconds * 1000);
+      console.log(`Seeking to position: ${seconds.toFixed(2)}s`);
+      
+      // First, get the current status to ensure audio is loaded
+      const status = await sound.getStatusAsync();
+      if (!status.isLoaded) {
+        console.log('Audio not loaded, cannot seek');
+        return;
+      }
+      
+      // Ensure the seek position is within valid bounds
+      const maxDuration = status.durationMillis ? status.durationMillis / 1000 : duration;
+      const clampedSeconds = Math.max(0, Math.min(seconds, maxDuration));
+      
+      console.log(`Seeking to ${clampedSeconds.toFixed(2)}s (max: ${maxDuration.toFixed(2)}s)`);
+      
+      // Perform the seek
+      await sound.setPositionAsync(clampedSeconds * 1000);
+      
+      // Update the current position immediately for better UI feedback
+      setCurrentPosition(clampedSeconds);
+      
+      console.log(`Successfully seeked to ${clampedSeconds.toFixed(2)}s`);
     } catch (error) {
       console.error('Error seeking audio:', error);
+      Alert.alert('Error', 'Failed to seek to position');
     }
   };
 
@@ -1074,14 +1140,53 @@ export default function DetailScreen() {
                     onLayout={(event) => {
                       const { width } = event.nativeEvent.layout;
                       setProgressBarWidth(width);
+                      console.log(`Progress bar width set to: ${width}px`);
                     }}
-                    onPress={(event) => {
-                      if (duration > 0 && sound) {
-                        const { locationX } = event.nativeEvent;
-                        const percentage = locationX / progressBarWidth;
-                        const newPosition = Math.max(0, Math.min(duration, percentage * duration));
-                        console.log(`Seeking to position: ${newPosition.toFixed(2)}s (${(percentage * 100).toFixed(1)}%)`);
-                        seekToPosition(newPosition);
+                    onPress={async (event) => {
+                      console.log('Progress bar clicked!');
+                      
+                      // Get the current width in case it wasn't set in onLayout yet
+                      const currentWidth = progressBarWidth > 0 ? progressBarWidth : 200; // fallback
+                      const { locationX } = event.nativeEvent;
+                      const percentage = Math.max(0, Math.min(1, locationX / currentWidth));
+                      
+                      console.log(`Progress bar clicked:
+                        - locationX: ${locationX}px
+                        - progressBarWidth: ${currentWidth}px
+                        - percentage: ${(percentage * 100).toFixed(1)}%
+                        - duration: ${duration.toFixed(2)}s
+                        - sound exists: ${!!sound}`);
+                      
+                      // If no sound loaded yet, load it first
+                      if (!sound) {
+                        console.log('Loading audio first...');
+                        await loadAudio(false); // Load without auto-play
+                        
+                        // Wait for audio to be fully loaded and duration to be available
+                        let attempts = 0;
+                        const maxAttempts = 20; // 2 seconds maximum wait
+                        
+                        while (duration === 0 && attempts < maxAttempts) {
+                          console.log(`Waiting for duration... attempt ${attempts + 1}`);
+                          await new Promise(resolve => setTimeout(resolve, 100));
+                          attempts++;
+                        }
+                        
+                        if (duration === 0) {
+                          console.log('Could not get audio duration after loading');
+                          Alert.alert('Error', 'Could not load audio duration');
+                          return;
+                        }
+                      }
+                      
+                      // Now we should have both sound and duration
+                      if (duration > 0) {
+                        const newPosition = percentage * duration;
+                        console.log(`Seeking to position: ${newPosition.toFixed(2)}s of ${duration.toFixed(2)}s`);
+                        await seekToPosition(newPosition);
+                      } else {
+                        console.log('Cannot seek - duration is still 0');
+                        Alert.alert('Error', 'Audio duration not available');
                       }
                     }}
                     activeOpacity={0.8}
@@ -1587,15 +1692,16 @@ function createStyles(colors: any) {
       width: '100%',
     },
     progressBar: {
-      height: 4,
+      height: 6,
       backgroundColor: colors.border,
-      borderRadius: 2,
+      borderRadius: 3,
       overflow: 'hidden',
+      marginVertical: 2,
     },
     progressFill: {
       height: '100%',
       backgroundColor: colors.primary,
-      borderRadius: 2,
+      borderRadius: 3,
     },
     // Speaker-based transcription styles
     speakerParagraphContainer: {

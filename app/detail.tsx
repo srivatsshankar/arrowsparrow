@@ -205,39 +205,28 @@ export default function DetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* File Information Section */}
+      {/* File Information Section - Clean without bounding box */}
       <View style={styles.fileInfoSection}>
-        <View style={styles.fileInfoCard}>
-          <View style={styles.fileIconContainer}>
-            {upload.file_type === 'audio' ? (
-              <Mic size={24} color={colors.primary} />
-            ) : (
-              <FileText size={24} color={colors.primary} />
-            )}
-          </View>
-          <View style={styles.fileInfo}>
-            <Text style={styles.fileName} numberOfLines={2}>
-              {upload.file_name}
-            </Text>
-            <Text style={styles.fileType}>
-              {upload.file_type === 'audio' ? 'Audio Recording' : 'Document'}
-            </Text>
-            <Text style={styles.fileMetadata}>
-              {formatFileSize(upload.file_size)} • {formatDate(upload.created_at)}
-            </Text>
-            <View style={styles.statusBadge}>
-              <View style={[
-                styles.statusDot, 
-                { backgroundColor: upload.status === 'completed' ? colors.success : colors.warning }
-              ]} />
-              <Text style={[
-                styles.statusText,
-                { color: upload.status === 'completed' ? colors.success : colors.warning }
-              ]}>
-                {upload.status === 'completed' ? 'Processed' : 'Processing'}
-              </Text>
-            </View>
-          </View>
+        <Text style={styles.fileName} numberOfLines={2}>
+          {upload.file_name}
+        </Text>
+        <Text style={styles.fileType}>
+          {upload.file_type === 'audio' ? 'Audio Recording' : 'Document'}
+        </Text>
+        <Text style={styles.fileMetadata}>
+          {formatFileSize(upload.file_size)} • {formatDate(upload.created_at)}
+        </Text>
+        <View style={styles.statusBadge}>
+          <View style={[
+            styles.statusDot, 
+            { backgroundColor: upload.status === 'completed' ? colors.success : colors.warning }
+          ]} />
+          <Text style={[
+            styles.statusText,
+            { color: upload.status === 'completed' ? colors.success : colors.warning }
+          ]}>
+            {upload.status === 'completed' ? 'Processed' : 'Processing'}
+          </Text>
         </View>
       </View>
 
@@ -470,19 +459,6 @@ function createStyles(colors: any) {
       shadowRadius: 2,
       elevation: 2,
     },
-    backButton: {
-      width: 38,
-      height: 38,
-      borderRadius: 10,
-      backgroundColor: colors.border + '40',
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.05,
-      shadowRadius: 2,
-      elevation: 1,
-    },
     menuButton: {
       width: 38,
       height: 38,
@@ -496,47 +472,23 @@ function createStyles(colors: any) {
       shadowRadius: 2,
       elevation: 1,
     },
-    // File Information Section
+    // File Information Section - Clean without bounding box
     fileInfoSection: {
       backgroundColor: colors.surface,
-      paddingHorizontal: 16,
-      paddingBottom: 16,
-    },
-    fileInfoCard: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      backgroundColor: colors.background,
-      padding: 20,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
-      elevation: 2,
-    },
-    fileIconContainer: {
-      width: 48,
-      height: 48,
-      backgroundColor: colors.primary + '15',
-      borderRadius: 24,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 16,
-    },
-    fileInfo: {
-      flex: 1,
+      paddingHorizontal: 20,
+      paddingVertical: 20,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
     },
     fileName: {
-      fontSize: 18,
+      fontSize: 24,
       fontWeight: '700',
       color: colors.text,
-      marginBottom: 4,
-      lineHeight: 24,
+      marginBottom: 8,
+      lineHeight: 32,
     },
     fileType: {
-      fontSize: 14,
+      fontSize: 16,
       fontWeight: '600',
       color: colors.primary,
       marginBottom: 4,
@@ -544,7 +496,7 @@ function createStyles(colors: any) {
     fileMetadata: {
       fontSize: 14,
       color: colors.textSecondary,
-      marginBottom: 8,
+      marginBottom: 12,
     },
     statusBadge: {
       flexDirection: 'row',

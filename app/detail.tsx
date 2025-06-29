@@ -14,7 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { ArrowLeft, FileText, Mic, Star, MessageSquare, List, Trash2, Menu, X } from 'lucide-react-native';
+import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X } from 'lucide-react-native';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {
@@ -451,16 +451,6 @@ export default function DetailScreen() {
                     <View style={styles.keyPointNumber}>
                       <Text style={styles.keyPointNumberText}>{index + 1}</Text>
                     </View>
-                    <View style={styles.importanceContainer}>
-                      {[...Array(5)].map((_, i) => (
-                        <Star
-                          key={i}
-                          size={12}
-                          color={i < point.importance_level ? colors.warning : colors.border}
-                          fill={i < point.importance_level ? colors.warning : 'transparent'}
-                        />
-                      ))}
-                    </View>
                   </View>
                   <Text style={styles.keyPointText}>{point.point_text}</Text>
                 </View>
@@ -480,7 +470,10 @@ export default function DetailScreen() {
         visible={showDropdownMenu}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowDropdownMenu(false)}
+        onRequestClose={() => {
+          console.log('Dropdown overlay pressed - closing menu');
+          setShowDropdownMenu(false);
+        }}
       >
         <TouchableOpacity 
           style={styles.dropdownOverlay}
@@ -755,7 +748,6 @@ function createStyles(colors: any) {
     keyPointHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
       marginBottom: 8,
     },
     keyPointNumber: {
@@ -770,10 +762,6 @@ function createStyles(colors: any) {
       color: '#FFFFFF',
       fontSize: 12,
       fontWeight: '600',
-    },
-    importanceContainer: {
-      flexDirection: 'row',
-      gap: 2,
     },
     keyPointText: {
       fontSize: 16,

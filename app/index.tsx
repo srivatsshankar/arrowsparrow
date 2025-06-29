@@ -203,8 +203,6 @@ export default function LibraryScreen() {
     const uri = recording.getURI();
     
     if (uri) {
-      // Close modal immediately when upload begins
-      closeModal();
       await handleFileUpload(uri, 'audio', 'recording.m4a');
     }
     
@@ -220,8 +218,6 @@ export default function LibraryScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const file = result.assets[0];
-        // Close modal immediately when upload begins
-        closeModal();
         await handleFileUpload(file.uri, 'document', file.name);
       }
     } catch (error) {
@@ -285,6 +281,9 @@ export default function LibraryScreen() {
 
   const handleFileUpload = async (uri: string, fileType: 'audio' | 'document', fileName: string) => {
     if (!user) return;
+
+    // Close modal immediately when upload actually begins
+    closeModal();
 
     // Create uploading file entry
     const uploadingFileId = Date.now().toString();

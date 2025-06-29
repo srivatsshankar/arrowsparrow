@@ -30,6 +30,15 @@ type UploadWithData = Upload & {
   key_points?: Array<{ point_text: string; importance_level: number }>;
 };
 
+type UploadingFile = {
+  id: string;
+  fileName: string;
+  fileType: 'audio' | 'document';
+  progress: number;
+  stage: 'uploading' | 'processing' | 'complete' | 'error';
+  errorMessage?: string;
+};
+
 export default function LibraryScreen() {
   const { user, signOut } = useAuth();
   const { colors } = useTheme();
@@ -41,14 +50,7 @@ export default function LibraryScreen() {
   const [showDropdownMenu, setShowDropdownMenu] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadFileName, setUploadFileName] = useState('');
-  const [uploadStage, setUploadStage] = useState<'uploading' | 'processing' | 'complete'>('uploading');
-
-  // Animation values for progress indicator
-  const progressAnim = useState(new Animated.Value(0))[0];
-  const pulseAnim = useState(new Animated.Value(1))[0];
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
 
   const styles = createStyles(colors);
 
@@ -94,47 +96,6 @@ export default function LibraryScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchUploads();
-  };
-
-  // Animate progress bar
-  const animateProgress = (toValue: number) => {
-    Animated.timing(progressAnim, {
-      toValue,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  };
-
-  // Pulse animation for processing stage
-  const startPulseAnimation = () => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  };
-
-  const stopPulseAnimation = () => {
-    pulseAnim.stopAnimation();
-    pulseAnim.setValue(1);
-  };
-
-  const resetUploadState = () => {
-    setUploading(false);
-    setUploadProgress(0);
-    setUploadFileName('');
-    setUploadStage('uploading');
-    progressAnim.setValue(0);
-    stopPulseAnimation();
   };
 
   const handleMenuItemPress = (action: string) => {
@@ -223,20 +184,39 @@ export default function LibraryScreen() {
     }
   };
 
+  const updateUploadingFile = (id: string, updates: Partial<UploadingFile>) => {
+    setUploadingFiles(prev => 
+      prev.map(file => 
+        file.id === id ? { ...file, ...updates } : file
+      )
+    );
+  };
+
+  const removeUploadingFile = (id: string) => {
+    setUploadingFiles(prev => prev.filter(file => file.id !== id));
+  };
+
   const handleFileUpload = async (uri: string, fileType: 'audio' | 'document', fileName: string) => {
     if (!user) return;
 
-    // Initialize upload state
-    setUploading(true);
-    setUploadFileName(fileName);
-    setUploadStage('uploading');
-    setUploadProgress(0);
-    animateProgress(0);
+    // Close upload modal immediately
+    setShowUploadModal(false);
+
+    // Create uploading file entry
+    const uploadingFileId = Date.now().toString();
+    const uploadingFile: UploadingFile = {
+      id: uploadingFileId,
+      fileName,
+      fileType,
+      progress: 0,
+      stage: 'uploading',
+    };
+
+    setUploadingFiles(prev => [uploadingFile, ...prev]);
 
     try {
       // Simulate initial progress
-      setUploadProgress(10);
-      animateProgress(0.1);
+      updateUploadingFile(uploadingFileId, { progress: 10 });
 
       // Get file info
       const response = await fetch(uri);
@@ -244,8 +224,7 @@ export default function LibraryScreen() {
       const fileSize = blob.size;
 
       // Update progress
-      setUploadProgress(30);
-      animateProgress(0.3);
+      updateUploadingFile(uploadingFileId, { progress: 30 });
 
       // Upload to Supabase Storage
       const fileExt = fileName.split('.').pop();
@@ -258,8 +237,7 @@ export default function LibraryScreen() {
       if (uploadError) throw uploadError;
 
       // Update progress
-      setUploadProgress(60);
-      animateProgress(0.6);
+      updateUploadingFile(uploadingFileId, { progress: 60 });
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
@@ -267,8 +245,7 @@ export default function LibraryScreen() {
         .getPublicUrl(filePath);
 
       // Update progress
-      setUploadProgress(80);
-      animateProgress(0.8);
+      updateUploadingFile(uploadingFileId, { progress: 80 });
 
       // Save to database
       const { data: dbData, error: dbError } = await supabase
@@ -287,13 +264,11 @@ export default function LibraryScreen() {
       if (dbError) throw dbError;
 
       // Complete upload stage
-      setUploadProgress(100);
-      animateProgress(1);
+      updateUploadingFile(uploadingFileId, { progress: 100 });
 
       // Wait a moment then switch to processing stage
       setTimeout(() => {
-        setUploadStage('processing');
-        startPulseAnimation();
+        updateUploadingFile(uploadingFileId, { stage: 'processing' });
       }, 500);
 
       // Refresh the uploads list
@@ -331,28 +306,24 @@ export default function LibraryScreen() {
           fetchUploads();
           
           // Show completion with error
-          setUploadStage('complete');
-          stopPulseAnimation();
+          updateUploadingFile(uploadingFileId, { 
+            stage: 'error',
+            errorMessage: errorData.error || 'Processing failed'
+          });
           
           setTimeout(() => {
-            resetUploadState();
-            Alert.alert(
-              'Processing Error', 
-              `File uploaded but processing failed: ${errorData.error || 'Unknown error'}. Please check your API configuration.`
-            );
-          }, 1500);
+            removeUploadingFile(uploadingFileId);
+          }, 3000);
         } else {
           const responseData = await processingResponse.json();
           console.log('Processing started successfully:', responseData);
           
           // Show completion
-          setUploadStage('complete');
-          stopPulseAnimation();
+          updateUploadingFile(uploadingFileId, { stage: 'complete' });
           
           setTimeout(() => {
-            resetUploadState();
-            Alert.alert('Success', 'File uploaded successfully! Processing will begin shortly.');
-          }, 1500);
+            removeUploadingFile(uploadingFileId);
+          }, 2000);
         }
       } catch (processingError) {
         console.error('Processing request error:', processingError);
@@ -370,22 +341,27 @@ export default function LibraryScreen() {
         fetchUploads();
         
         // Show completion with error
-        setUploadStage('complete');
-        stopPulseAnimation();
+        updateUploadingFile(uploadingFileId, { 
+          stage: 'error',
+          errorMessage: 'Failed to start processing'
+        });
         
         setTimeout(() => {
-          resetUploadState();
-          Alert.alert(
-            'Processing Error', 
-            'File uploaded but processing could not be started. Please check your connection and try again.'
-          );
-        }, 1500);
+          removeUploadingFile(uploadingFileId);
+        }, 3000);
       }
       
     } catch (error) {
       console.error('Upload error:', error);
-      resetUploadState();
-      Alert.alert('Error', 'Failed to upload file');
+      updateUploadingFile(uploadingFileId, { 
+        stage: 'error',
+        errorMessage: 'Upload failed'
+      });
+      
+      setTimeout(() => {
+        removeUploadingFile(uploadingFileId);
+        Alert.alert('Error', 'Failed to upload file');
+      }, 2000);
     }
   };
 
@@ -438,32 +414,41 @@ export default function LibraryScreen() {
     });
   };
 
-  const renderUploadProgress = () => {
-    if (!uploading) return null;
+  const renderUploadingFileCard = (uploadingFile: UploadingFile) => {
+    const progressAnim = new Animated.Value(uploadingFile.progress / 100);
+    
+    // Animate progress
+    Animated.timing(progressAnim, {
+      toValue: uploadingFile.progress / 100,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
 
     return (
-      <View style={styles.uploadProgressContainer}>
-        <View style={styles.uploadProgressHeader}>
-          <View style={styles.uploadProgressInfo}>
-            <Animated.View style={[styles.uploadProgressIcon, { transform: [{ scale: pulseAnim }] }]}>
-              {uploadStage === 'uploading' && <Upload size={20} color={colors.primary} />}
-              {uploadStage === 'processing' && <Loader size={20} color={colors.warning} />}
-              {uploadStage === 'complete' && <CheckCircle size={20} color={colors.success} />}
-            </Animated.View>
-            <View style={styles.uploadProgressText}>
-              <Text style={styles.uploadProgressTitle} numberOfLines={1}>
-                {uploadFileName}
+      <View key={uploadingFile.id} style={[styles.uploadCard, styles.uploadingCard]}>
+        <View style={styles.cardHeader}>
+          <View style={styles.fileInfo}>
+            <View style={[styles.fileIcon, styles.uploadingFileIcon]}>
+              {uploadingFile.stage === 'uploading' && <Upload size={20} color={colors.primary} />}
+              {uploadingFile.stage === 'processing' && <Loader size={20} color={colors.warning} />}
+              {uploadingFile.stage === 'complete' && <CheckCircle size={20} color={colors.success} />}
+              {uploadingFile.stage === 'error' && <AlertCircle size={20} color={colors.error} />}
+            </View>
+            <View style={styles.fileDetails}>
+              <Text style={styles.fileName} numberOfLines={1}>
+                {uploadingFile.fileName}
               </Text>
-              <Text style={styles.uploadProgressStatus}>
-                {uploadStage === 'uploading' && `Uploading... ${uploadProgress}%`}
-                {uploadStage === 'processing' && 'Processing with AI...'}
-                {uploadStage === 'complete' && 'Upload complete!'}
+              <Text style={styles.uploadingStatus}>
+                {uploadingFile.stage === 'uploading' && `Uploading... ${uploadingFile.progress}%`}
+                {uploadingFile.stage === 'processing' && 'Processing with AI...'}
+                {uploadingFile.stage === 'complete' && 'Upload complete!'}
+                {uploadingFile.stage === 'error' && `Error: ${uploadingFile.errorMessage}`}
               </Text>
             </View>
           </View>
         </View>
-        
-        {uploadStage === 'uploading' && (
+
+        {uploadingFile.stage === 'uploading' && (
           <View style={styles.progressBarContainer}>
             <View style={styles.progressBarBackground}>
               <Animated.View 
@@ -480,13 +465,13 @@ export default function LibraryScreen() {
             </View>
           </View>
         )}
-        
-        {uploadStage === 'processing' && (
+
+        {uploadingFile.stage === 'processing' && (
           <View style={styles.processingIndicator}>
             <View style={styles.processingDots}>
-              <Animated.View style={[styles.processingDot, { opacity: pulseAnim }]} />
-              <Animated.View style={[styles.processingDot, { opacity: pulseAnim }]} />
-              <Animated.View style={[styles.processingDot, { opacity: pulseAnim }]} />
+              <View style={[styles.processingDot, { backgroundColor: colors.warning }]} />
+              <View style={[styles.processingDot, { backgroundColor: colors.warning }]} />
+              <View style={[styles.processingDot, { backgroundColor: colors.warning }]} />
             </View>
           </View>
         )}
@@ -546,14 +531,11 @@ export default function LibraryScreen() {
         <View style={styles.libraryHeader}>
           <Text style={styles.title}>Your Library</Text>
           <Text style={styles.subtitle}>
-            {uploads.length} item{uploads.length !== 1 ? 's' : ''} in your collection
+            {uploads.length + uploadingFiles.length} item{uploads.length + uploadingFiles.length !== 1 ? 's' : ''} in your collection
           </Text>
         </View>
 
-        {/* Upload Progress Indicator */}
-        {renderUploadProgress()}
-
-        {uploads.length === 0 ? (
+        {uploads.length === 0 && uploadingFiles.length === 0 ? (
           <View style={styles.emptyState}>
             <FileText size={64} color={colors.textSecondary} />
             <Text style={styles.emptyTitle}>No content yet</Text>
@@ -571,6 +553,10 @@ export default function LibraryScreen() {
           </View>
         ) : (
           <View style={styles.list}>
+            {/* Render uploading files first */}
+            {uploadingFiles.map(renderUploadingFileCard)}
+            
+            {/* Render completed uploads */}
             {uploads.map((upload) => (
               <TouchableOpacity 
                 key={upload.id} 
@@ -758,7 +744,6 @@ export default function LibraryScreen() {
               <TouchableOpacity
                 style={styles.uploadOption}
                 onPress={pickDocument}
-                disabled={uploading}
                 activeOpacity={0.8}
               >
                 <View style={styles.optionIcon}>
@@ -891,78 +876,6 @@ function createStyles(colors: any) {
       fontSize: 16,
       color: colors.textSecondary,
     },
-    // Upload Progress Indicator
-    uploadProgressContainer: {
-      backgroundColor: colors.surface,
-      marginHorizontal: 16,
-      marginTop: 12,
-      borderRadius: 16,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 4,
-      elevation: 2,
-    },
-    uploadProgressHeader: {
-      marginBottom: 12,
-    },
-    uploadProgressInfo: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    uploadProgressIcon: {
-      width: 40,
-      height: 40,
-      backgroundColor: colors.primary + '15',
-      borderRadius: 20,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 12,
-    },
-    uploadProgressText: {
-      flex: 1,
-    },
-    uploadProgressTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: colors.text,
-      marginBottom: 2,
-    },
-    uploadProgressStatus: {
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
-    progressBarContainer: {
-      marginTop: 8,
-    },
-    progressBarBackground: {
-      height: 6,
-      backgroundColor: colors.border + '60',
-      borderRadius: 3,
-      overflow: 'hidden',
-    },
-    progressBarFill: {
-      height: '100%',
-      backgroundColor: colors.primary,
-      borderRadius: 3,
-    },
-    processingIndicator: {
-      alignItems: 'center',
-      marginTop: 8,
-    },
-    processingDots: {
-      flexDirection: 'row',
-      gap: 6,
-    },
-    processingDot: {
-      width: 8,
-      height: 8,
-      backgroundColor: colors.warning,
-      borderRadius: 4,
-    },
     emptyState: {
       flex: 1,
       alignItems: 'center',
@@ -1016,6 +929,10 @@ function createStyles(colors: any) {
       shadowRadius: 4,
       elevation: 2,
     },
+    uploadingCard: {
+      borderColor: colors.primary + '40',
+      backgroundColor: colors.primary + '05',
+    },
     cardHeader: {
       flexDirection: 'row',
       alignItems: 'flex-start',
@@ -1036,6 +953,9 @@ function createStyles(colors: any) {
       justifyContent: 'center',
       marginRight: 12,
     },
+    uploadingFileIcon: {
+      backgroundColor: colors.primary + '25',
+    },
     fileDetails: {
       flex: 1,
     },
@@ -1048,6 +968,11 @@ function createStyles(colors: any) {
     fileMetadata: {
       fontSize: 14,
       color: colors.textSecondary,
+    },
+    uploadingStatus: {
+      fontSize: 14,
+      color: colors.primary,
+      fontWeight: '500',
     },
     statusContainer: {
       flexDirection: 'row',
@@ -1126,6 +1051,34 @@ function createStyles(colors: any) {
       color: colors.error,
       fontStyle: 'italic',
       opacity: 0.8,
+    },
+    // Progress indicator styles
+    progressBarContainer: {
+      marginTop: 8,
+    },
+    progressBarBackground: {
+      height: 6,
+      backgroundColor: colors.border + '60',
+      borderRadius: 3,
+      overflow: 'hidden',
+    },
+    progressBarFill: {
+      height: '100%',
+      backgroundColor: colors.primary,
+      borderRadius: 3,
+    },
+    processingIndicator: {
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    processingDots: {
+      flexDirection: 'row',
+      gap: 6,
+    },
+    processingDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
     },
     // Dropdown menu styles
     dropdownOverlay: {

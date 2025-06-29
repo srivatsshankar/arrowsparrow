@@ -750,8 +750,16 @@ export default function LibraryScreen() {
         animationType="slide"
         onRequestClose={() => setShowUploadModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowUploadModal(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalContainer}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Upload Content</Text>
               <TouchableOpacity
@@ -812,24 +820,8 @@ export default function LibraryScreen() {
                 </View>
               </TouchableOpacity>
             </View>
-
-            <View style={styles.infoSection}>
-              <Text style={styles.infoTitle}>How it works</Text>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoNumber}>1</Text>
-                <Text style={styles.infoText}>Upload your content</Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoNumber}>2</Text>
-                <Text style={styles.infoText}>AI processes and extracts insights</Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Text style={styles.infoNumber}>3</Text>
-                <Text style={styles.infoText}>Get summaries and key points</Text>
-              </View>
-            </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </>
   );
@@ -1185,9 +1177,9 @@ function createStyles(colors: any) {
       backgroundColor: colors.surface,
       borderTopLeftRadius: 24,
       borderTopRightRadius: 24,
-      paddingTop: 20, // Reduced from 24
-      paddingHorizontal: 20, // Reduced from 24
-      paddingBottom: 32, // Reduced from 40
+      paddingTop: 20,
+      paddingHorizontal: 20,
+      paddingBottom: 32,
       maxHeight: '80%',
     },
     modalHeader: {
@@ -1207,16 +1199,15 @@ function createStyles(colors: any) {
     modalSubtitle: {
       fontSize: 16,
       color: colors.textSecondary,
-      marginBottom: 24, // Reduced from 32
+      marginBottom: 24,
     },
     uploadOptions: {
-      gap: 12, // Reduced from 16
-      marginBottom: 24, // Reduced from 32
+      gap: 12,
     },
     uploadOption: {
       flexDirection: 'row',
       alignItems: 'center',
-      padding: 16, // Reduced from 20
+      padding: 16,
       backgroundColor: colors.background,
       borderRadius: 16,
       borderWidth: 1,
@@ -1255,40 +1246,6 @@ function createStyles(colors: any) {
     disabledText: {
       color: colors.textSecondary,
       opacity: 0.6,
-    },
-    infoSection: {
-      backgroundColor: colors.background,
-      padding: 16, // Reduced from 20
-      borderRadius: 16,
-      marginBottom: 12, // Reduced from 16
-    },
-    infoTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: colors.text,
-      marginBottom: 12, // Reduced from 16
-    },
-    infoItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 10, // Reduced from 12
-    },
-    infoNumber: {
-      width: 24,
-      height: 24,
-      backgroundColor: colors.primary,
-      color: '#FFFFFF',
-      borderRadius: 12,
-      textAlign: 'center',
-      fontSize: 12,
-      fontWeight: '600',
-      lineHeight: 24,
-      marginRight: 12,
-    },
-    infoText: {
-      flex: 1,
-      fontSize: 14,
-      color: colors.textSecondary,
     },
   });
 }

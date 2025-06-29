@@ -54,7 +54,7 @@ export default function LibraryScreen() {
   
   // Animation values for modal
   const [modalOpacity] = useState(new Animated.Value(0));
-  const [modalScale] = useState(new Animated.Value(0.9));
+  const [modalTranslateY] = useState(new Animated.Value(300));
 
   const styles = createStyles(colors);
 
@@ -67,8 +67,8 @@ export default function LibraryScreen() {
           duration: 300,
           useNativeDriver: true,
         }),
-        Animated.spring(modalScale, {
-          toValue: 1,
+        Animated.spring(modalTranslateY, {
+          toValue: 0,
           tension: 100,
           friction: 8,
           useNativeDriver: true,
@@ -78,12 +78,12 @@ export default function LibraryScreen() {
       Animated.parallel([
         Animated.timing(modalOpacity, {
           toValue: 0,
-          duration: 200,
+          duration: 250,
           useNativeDriver: true,
         }),
-        Animated.timing(modalScale, {
-          toValue: 0.9,
-          duration: 200,
+        Animated.timing(modalTranslateY, {
+          toValue: 300,
+          duration: 250,
           useNativeDriver: true,
         }),
       ]).start();
@@ -779,7 +779,7 @@ export default function LibraryScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Upload Modal */}
+      {/* Upload Modal - Bottom Slide */}
       <Modal
         visible={showUploadModal}
         transparent={true}
@@ -804,8 +804,7 @@ export default function LibraryScreen() {
             style={[
               styles.modalContainer,
               {
-                transform: [{ scale: modalScale }],
-                opacity: modalOpacity,
+                transform: [{ translateY: modalTranslateY }],
               }
             ]}
           >
@@ -1216,13 +1215,11 @@ function createStyles(colors: any) {
       marginVertical: 4,
       marginHorizontal: 8,
     },
-    // Modal styles - Updated for proper overlay
+    // Modal styles - Bottom slide animation
     modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.6)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
+      justifyContent: 'flex-end',
     },
     modalBackdrop: {
       position: 'absolute',
@@ -1233,13 +1230,14 @@ function createStyles(colors: any) {
     },
     modalContainer: {
       backgroundColor: colors.surface,
-      borderRadius: 24,
-      padding: 24,
-      width: '100%',
-      maxWidth: 400,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingTop: 20,
+      paddingHorizontal: 24,
+      paddingBottom: 40,
       maxHeight: '80%',
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: 10 },
+      shadowOffset: { width: 0, height: -4 },
       shadowOpacity: 0.25,
       shadowRadius: 20,
       elevation: 10,

@@ -319,6 +319,40 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
   }
 }
 
+function extractJsonFromText(text: string): string | null {
+  // Method 1: Try to extract from markdown JSON code block
+  const markdownJsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/i);
+  if (markdownJsonMatch) {
+    return markdownJsonMatch[1].trim();
+  }
+
+  // Method 2: Try to extract from generic code block
+  const codeBlockMatch = text.match(/```\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    const content = codeBlockMatch[1].trim();
+    // Check if it looks like JSON (starts with { and ends with })
+    if (content.startsWith('{') && content.endsWith('}')) {
+      return content;
+    }
+  }
+
+  // Method 3: Extract content between first { and last }
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  
+  if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+    return text.substring(firstBrace, lastBrace + 1);
+  }
+
+  // Method 4: Try the original regex approach as fallback
+  const regexMatch = text.match(/\{[\s\S]*\}/);
+  if (regexMatch) {
+    return regexMatch[0];
+  }
+
+  return null;
+}
+
 async function processSummaryWithGemini(text: string, uploadId: string, supabase: any): Promise<void> {
   if (!GOOGLE_GEMINI_API_KEY) {
     throw new Error('Google Gemini API key not configured. Please set GOOGLE_GEMINI_API_KEY in your Supabase Edge Function environment variables.');
@@ -382,22 +416,28 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
       throw new Error('No response received from Gemini API');
     }
     
-    // Parse JSON response
-    const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error('Invalid JSON response from Gemini:', generatedText);
-      throw new Error('Invalid JSON response from Gemini API');
+    console.log('Raw Gemini response:', generatedText);
+    
+    // Use improved JSON extraction
+    const jsonString = extractJsonFromText(generatedText);
+    if (!jsonString) {
+      console.error('No JSON found in Gemini response:', generatedText);
+      throw new Error('No valid JSON found in AI response');
     }
+
+    console.log('Extracted JSON string:', jsonString);
 
     let analysis;
     try {
-      analysis = JSON.parse(jsonMatch[0]);
+      analysis = JSON.parse(jsonString);
     } catch (parseError) {
-      console.error('Failed to parse Gemini response:', parseError);
-      throw new Error('Failed to parse AI response');
+      console.error('Failed to parse extracted JSON:', parseError);
+      console.error('JSON string that failed to parse:', jsonString);
+      throw new Error('Failed to parse AI response - invalid JSON format');
     }
 
     if (!analysis.summary) {
+      console.error('No summary in parsed analysis:', analysis);
       throw new Error('No summary received from AI analysis');
     }
 

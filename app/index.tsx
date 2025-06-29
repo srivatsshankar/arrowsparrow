@@ -196,6 +196,47 @@ export default function LibraryScreen() {
     setUploadingFiles(prev => prev.filter(file => file.id !== id));
   };
 
+  // Function to generate a unique file path with versioning
+  const generateUniqueFilePath = async (userId: string, originalFileName: string): Promise<string> => {
+    const fileExt = originalFileName.split('.').pop();
+    const baseName = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
+    
+    let version = 0;
+    let fileName = originalFileName;
+    let filePath = `${userId}/${Date.now()}_${fileName}`;
+    
+    // Check if file exists and increment version if needed
+    while (true) {
+      const { data, error } = await supabase.storage
+        .from('uploads')
+        .list(userId, {
+          search: fileName
+        });
+      
+      if (error) {
+        console.error('Error checking file existence:', error);
+        break; // If we can't check, proceed with current name
+      }
+      
+      // If no files found with this name, we can use it
+      if (!data || data.length === 0) {
+        break;
+      }
+      
+      // If files exist with this name, increment version
+      const existingFile = data.find(file => file.name.includes(fileName));
+      if (!existingFile) {
+        break;
+      }
+      
+      version++;
+      fileName = `${baseName}_v${version}.${fileExt}`;
+      filePath = `${userId}/${Date.now()}_${fileName}`;
+    }
+    
+    return filePath;
+  };
+
   const handleFileUpload = async (uri: string, fileType: 'audio' | 'document', fileName: string) => {
     if (!user) return;
 
@@ -226,33 +267,44 @@ export default function LibraryScreen() {
       // Update progress
       updateUploadingFile(uploadingFileId, { progress: 30 });
 
-      // Upload to Supabase Storage
-      const fileExt = fileName.split('.').pop();
-      const filePath = `${user.id}/${Date.now()}.${fileExt}`;
+      // Generate unique file path with versioning
+      const uniqueFilePath = await generateUniqueFilePath(user.id, fileName);
+      console.log('Generated unique file path:', uniqueFilePath);
       
+      // Update progress
+      updateUploadingFile(uploadingFileId, { progress: 50 });
+
+      // Upload to Supabase Storage with unique path
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('uploads')
-        .upload(filePath, blob);
+        .upload(uniqueFilePath, blob);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        throw uploadError;
+      }
 
       // Update progress
-      updateUploadingFile(uploadingFileId, { progress: 60 });
+      updateUploadingFile(uploadingFileId, { progress: 70 });
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('uploads')
-        .getPublicUrl(filePath);
+        .getPublicUrl(uniqueFilePath);
 
       // Update progress
-      updateUploadingFile(uploadingFileId, { progress: 80 });
+      updateUploadingFile(uploadingFileId, { progress: 85 });
+
+      // Extract the final file name from the unique path for display
+      const finalFileName = uniqueFilePath.split('/').pop() || fileName;
+      const displayFileName = finalFileName.replace(/^\d+_/, ''); // Remove timestamp prefix for display
 
       // Save to database
       const { data: dbData, error: dbError } = await supabase
         .from('uploads')
         .insert({
           user_id: user.id,
-          file_name: fileName,
+          file_name: displayFileName, // Use clean display name
           file_type: fileType,
           file_url: publicUrl,
           file_size: fileSize,
@@ -261,7 +313,10 @@ export default function LibraryScreen() {
         .select()
         .single();
 
-      if (dbError) throw dbError;
+      if (dbError) {
+        console.error('Database insert error:', dbError);
+        throw dbError;
+      }
 
       // Complete upload stage
       updateUploadingFile(uploadingFileId, { progress: 100 });

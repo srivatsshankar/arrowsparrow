@@ -59,16 +59,17 @@ export default function DetailScreen() {
         `)
         .eq('id', id)
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error) {
-        // Handle the case where no record is found
-        if (error.code === 'PGRST116') {
-          console.log('Upload not found or user does not have permission to view it');
-          setUpload(null);
-        } else {
-          console.error('Error fetching upload detail:', error);
-        }
+        console.error('Error fetching upload detail:', error);
+        return;
+      }
+
+      // Check if no data was returned (record not found or deleted)
+      if (data === null) {
+        console.log('Upload not found or user does not have permission to view it');
+        setUpload(null);
         return;
       }
 
@@ -217,9 +218,9 @@ export default function DetailScreen() {
         .from('uploads')
         .select('id')
         .eq('id', upload.id)
-        .single();
+        .maybeSingle();
 
-      if (verifyError && verifyError.code === 'PGRST116') {
+      if (verifyData === null) {
         console.log('Deletion verified - record no longer exists');
       } else if (verifyData) {
         console.error('WARNING: Record still exists after deletion!', verifyData);

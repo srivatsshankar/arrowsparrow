@@ -12,6 +12,7 @@ import {
 import { Link } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { LogIn, Mail, Lock } from 'lucide-react-native';
+import BoltLogo from '@/components/BoltLogo';
 
 export default function SignIn() {
   const [email, setEmail] = useState('');
@@ -42,7 +43,9 @@ export default function SignIn() {
     >
       <View style={styles.content}>
         <View style={styles.header}>
-          <LogIn size={48} color="#3B82F6" />
+          <View style={styles.appIcon}>
+            <Text style={styles.appIconText}>🏹</Text>
+          </View>
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.subtitle}>Sign in to continue to Arrow Sparrow</Text>
         </View>
@@ -90,6 +93,9 @@ export default function SignIn() {
             <Text style={styles.linkText}>Sign Up</Text>
           </Link>
         </View>
+
+        {/* Bolt Logo at bottom */}
+        <BoltLogo style={styles.boltLogo} />
       </View>
     </KeyboardAvoidingView>
   );
@@ -108,6 +114,19 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 48,
+  },
+  appIcon: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#3B82F6' + '15',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  appIconText: {
+    fontSize: 40,
+    textAlign: 'center',
   },
   title: {
     fontSize: 28,
@@ -175,5 +194,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#3B82F6',
     fontWeight: '600',
+  },
+  boltLogo: {
+    marginTop: 40,
   },
 });

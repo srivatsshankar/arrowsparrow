@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,16 +11,19 @@ import {
   Modal,
   Image,
   Animated,
+  Dimensions,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useRecording } from '@/contexts/RecordingContext';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings, Headphones } from 'lucide-react-native';
+import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings, Headphones, Pause, Play, ArrowLeft } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
+import BoltLogo from '@/components/BoltLogo';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {
@@ -33,21 +36,111 @@ type UploadWithData = Upload & {
 export default function LibraryScreen() {
   const { user, signOut } = useAuth();
   const { colors } = useTheme();
+  const { 
+    isRecording, 
+    startRecording, 
+    stopRecording, 
+    handleFileUpload,
+    recordingInBackground,
+    showRecordingScreen,
+    recordingDuration,
+    isPaused,
+    returnToRecording,
+    pauseRecording,
+  } = useRecording();
   const router = useRouter();
   const [uploads, setUploads] = useState<UploadWithData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showDropdownMenu, setShowDropdownMenu] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [pollingInterval, setPollingInterval] = useState<number | null>(null);
   
   // Animation values for modal
   const [modalOpacity] = useState(new Animated.Value(0));
   const [modalTranslateY] = useState(new Animated.Value(300));
+  
+  // Audio wave animation values
+  const waveAnimations = useRef([
+    new Animated.Value(0.3),
+    new Animated.Value(0.5),
+    new Animated.Value(0.7),
+    new Animated.Value(0.4),
+    new Animated.Value(0.6),
+  ]).current;
 
   const styles = createStyles(colors);
+
+  // Audio Wave Animation Component
+  const AudioWaveVisualizer = ({ isActive, isPaused }: { isActive: boolean; isPaused: boolean }) => {
+    useEffect(() => {
+      if (isActive && !isPaused) {
+        // Create staggered wave animation
+        const animations = waveAnimations.map((wave, index) => 
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(wave, {
+                toValue: Math.random() * 0.8 + 0.2,
+                duration: 300 + (index * 50),
+                useNativeDriver: true,
+              }),
+              Animated.timing(wave, {
+                toValue: Math.random() * 0.8 + 0.2,
+                duration: 400 + (index * 40),
+                useNativeDriver: true,
+              }),
+            ])
+          )
+        );
+        
+        animations.forEach((animation, index) => {
+          setTimeout(() => animation.start(), index * 100);
+        });
+
+        return () => {
+          animations.forEach(animation => animation.stop());
+        };
+      } else {
+        // Reset to idle state
+        waveAnimations.forEach((wave, index) => {
+          Animated.timing(wave, {
+            toValue: isPaused ? 0.2 : 0.3,
+            duration: 200,
+            useNativeDriver: true,
+          }).start();
+        });
+      }
+    }, [isActive, isPaused]);
+
+    return (
+      <View style={styles.audioWaveContainer}>
+        {waveAnimations.map((wave, index) => (
+          <Animated.View
+            key={index}
+            style={[
+              styles.audioWave,
+              {
+                backgroundColor: isPaused ? colors.warning : colors.error,
+                transform: [{ scaleY: wave }],
+              },
+            ]}
+          />
+        ))}
+      </View>
+    );
+  };
+
+  // Helper function to format recording duration
+  const formatDuration = (milliseconds: number) => {
+    const hours = Math.floor(milliseconds / (1000 * 60 * 60));
+    const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((milliseconds % (1000 * 60)) / 1000);
+    
+    if (hours > 0) {
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   // Handle modal animations
   useEffect(() => {
@@ -68,6 +161,8 @@ export default function LibraryScreen() {
       ]).start();
     }
   }, [showUploadModal]);
+
+  // Handle pulse animation for floating recording button - REMOVED to prevent size changes
 
   // Function to handle modal close with animation
   const closeModal = () => {
@@ -170,6 +265,8 @@ export default function LibraryScreen() {
     };
   }, [uploads, pollingInterval]);
 
+  // Cleanup recording timers on unmount - moved to RecordingContext
+
   // Refresh data when screen comes into focus (e.g., after returning from detail screen)
   useFocusEffect(
     useCallback(() => {
@@ -205,49 +302,6 @@ export default function LibraryScreen() {
     } catch (error) {
       console.error('Sign out error:', error);
     }
-  };
-
-  const startRecording = async () => {
-    try {
-      if (Platform.OS === 'web') {
-        Alert.alert('Not Available', 'Audio recording is not available on web platform');
-        return;
-      }
-
-      const permission = await Audio.requestPermissionsAsync();
-      if (permission.status !== 'granted') {
-        Alert.alert('Permission required', 'Please grant microphone access to record audio');
-        return;
-      }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(recording);
-      setIsRecording(true);
-    } catch (error) {
-      console.error('Failed to start recording', error);
-      Alert.alert('Error', 'Failed to start recording');
-    }
-  };
-
-  const stopRecording = async () => {
-    if (!recording) return;
-
-    setIsRecording(false);
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    
-    if (uri) {
-      await handleFileUpload(uri, 'audio', 'recording.m4a');
-    }
-    
-    setRecording(null);
   };
 
   const pickDocument = async () => {
@@ -332,145 +386,6 @@ export default function LibraryScreen() {
     }
     
     return filePath;
-  };
-
-  const handleFileUpload = async (uri: string, fileType: 'audio' | 'document', fileName: string) => {
-    if (!user) return;
-
-    // Close modal immediately when upload actually begins
-    closeModal();
-
-    // First, create a database entry with "uploaded" status
-    const { data: initialDbData, error: initialDbError } = await supabase
-      .from('uploads')
-      .insert({
-        user_id: user.id,
-        file_name: fileName,
-        file_type: fileType,
-        file_url: '', // Will be updated after upload
-        file_size: 0, // Will be updated after we get file info
-        status: 'uploaded', // Initial status after successful upload
-      })
-      .select()
-      .single();
-
-    if (initialDbError) {
-      console.error('Initial database insert error:', initialDbError);
-      Alert.alert('Error', 'Failed to start upload');
-      return;
-    }
-
-    // Refresh to show the uploading entry
-    fetchUploads();
-
-    try {
-      // Get file info
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const fileSize = blob.size;
-
-      // Generate unique file path with versioning
-      const uniqueFilePath = await generateUniqueFilePath(user.id, fileName);
-      console.log('Generated unique file path:', uniqueFilePath);
-
-      // Upload to Supabase Storage with unique path
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('uploads')
-        .upload(uniqueFilePath, blob);
-
-      if (uploadError) {
-        console.error('Storage upload error:', uploadError);
-        throw uploadError;
-      }
-
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('uploads')
-        .getPublicUrl(uniqueFilePath);
-
-      // Extract the final file name from the unique path for display
-      const finalFileName = uniqueFilePath.split('/').pop() || fileName;
-      const displayFileName = finalFileName.replace(/^\d+_/, ''); // Remove timestamp prefix for display
-
-      // Update database entry with file details and "uploaded" status
-      const { data: dbData, error: dbError } = await supabase
-        .from('uploads')
-        .update({
-          file_name: displayFileName, // Use clean display name
-          file_url: publicUrl,
-          file_size: fileSize,
-          status: 'uploaded',
-        })
-        .eq('id', initialDbData.id)
-        .select()
-        .single();
-
-      if (dbError) {
-        console.error('Database update error:', dbError);
-        throw dbError;
-      }
-
-      // Refresh uploads to show the updated entry
-      fetchUploads();
-      
-      // Trigger processing via edge function
-      try {
-        const processingResponse = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/process-upload`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            uploadId: initialDbData.id,
-            fileType: fileType,
-            fileUrl: publicUrl,
-          }),
-        });
-
-        if (!processingResponse.ok) {
-          const errorData = await processingResponse.json().catch(() => ({ error: 'Unknown error' }));
-          console.error('Processing request failed:', errorData);
-          
-          // Update the upload status to error in the database
-          await supabase
-            .from('uploads')
-            .update({ 
-              status: 'error',
-              error_message: errorData.error || 'Processing failed'
-            })
-            .eq('id', initialDbData.id);
-        } else {
-          const responseData = await processingResponse.json();
-          console.log('Processing started successfully:', responseData);
-        }
-      } catch (processingError) {
-        console.error('Processing request error:', processingError);
-        
-        // Update the upload status to error in the database
-        await supabase
-          .from('uploads')
-          .update({ 
-            status: 'error',
-            error_message: 'Failed to start processing'
-          })
-          .eq('id', initialDbData.id);
-      }
-      
-    } catch (error) {
-      console.error('Upload error:', error);
-      
-      // Update the database entry to show error
-      await supabase
-        .from('uploads')
-        .update({ 
-          status: 'error',
-          error_message: 'Upload failed'
-        })
-        .eq('id', initialDbData.id);
-      
-      Alert.alert('Error', 'Failed to upload file');
-    }
   };
 
   const handleUploadPress = (upload: UploadWithData) => {
@@ -650,12 +565,10 @@ export default function LibraryScreen() {
         {/* Top Navigation Bar */}
         <View style={styles.topBar}>
           <View style={styles.logoContainer}>
-            <Image
-              source={{ uri: 'https://images.pexels.com/photos/1181467/pexels-photo-1181467.jpeg?auto=compress&cs=tinysrgb&w=100&h=100&dpr=2' }}
-              style={styles.logoImage}
-              accessibilityLabel="Arrow Sparrow icon"
-              accessibilityRole="image"
-            />
+            {/* App Icon - For now using a styled placeholder, replace with actual icon */}
+            <View style={styles.appIconContainer}>
+              <Text style={styles.appIconText}>🏹</Text>
+            </View>
           </View>
           
           <View style={styles.topBarActions}>
@@ -686,6 +599,44 @@ export default function LibraryScreen() {
           </Text>
         </View>
 
+        {/* Floating Recording Bubble - Positioned above content, only visible on LibraryScreen when recording in background */}
+        {(isRecording || recordingInBackground) && !showRecordingScreen && (
+          <View style={styles.floatingRecordingBubbleContent}>
+            <TouchableOpacity
+              style={styles.floatingRecordingBubbleInner}
+              onPress={returnToRecording}
+              activeOpacity={0.9}
+            >
+              <View style={styles.floatingBubbleContent}>
+                <AudioWaveVisualizer 
+                  isActive={isRecording || recordingInBackground} 
+                  isPaused={isPaused} 
+                />
+                <View style={styles.floatingBubbleText}>
+                  <Text style={styles.floatingBubbleTitle}>
+                    {isPaused ? 'Recording Paused' : 'Recording in Progress'}
+                  </Text>
+                  <Text style={styles.floatingBubbleTimer}>{formatDuration(recordingDuration)}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.floatingBubbleIcon}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    pauseRecording();
+                  }}
+                  activeOpacity={0.8}
+                >
+                  {isPaused ? (
+                    <Play size={16} color={colors.primary} />
+                  ) : (
+                    <Pause size={16} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {uploads.length === 0 ? (
           <View style={styles.emptyState}>
             <FileText size={64} color={colors.textSecondary} />
@@ -707,6 +658,9 @@ export default function LibraryScreen() {
             {uploads.map(upload => renderUploadCard(upload))}
           </View>
         )}
+
+        {/* Bolt Logo at bottom */}
+        <BoltLogo style={styles.boltLogo} />
       </ScrollView>
 
       {/* Dropdown Menu Modal */}
@@ -801,27 +755,31 @@ export default function LibraryScreen() {
             <View style={styles.uploadOptions}>
               <TouchableOpacity
                 style={[styles.uploadOption, isRecording && styles.recordingOption]}
-                onPress={isRecording ? stopRecording : startRecording}
-                disabled={Platform.OS === 'web'}
+                onPress={async () => {
+                  if (isRecording) {
+                    await stopRecording();
+                  } else {
+                    closeModal();
+                    await startRecording();
+                  }
+                }}
                 activeOpacity={0.8}
               >
                 <View style={[styles.optionIcon, isRecording && styles.recordingIcon]}>
                   {isRecording ? (
                     <Square size={24} color="#FFFFFF" />
                   ) : (
-                    <Mic size={24} color={Platform.OS === 'web' ? colors.textSecondary : colors.primary} />
+                    <Mic size={24} color={colors.primary} />
                   )}
                 </View>
                 <View style={styles.optionContent}>
-                  <Text style={[styles.optionTitle, Platform.OS === 'web' && styles.disabledText]}>
+                  <Text style={styles.optionTitle}>
                     {isRecording ? 'Stop Recording' : 'Record Audio'}
                   </Text>
-                  <Text style={[styles.optionDescription, Platform.OS === 'web' && styles.disabledText]}>
-                    {Platform.OS === 'web' 
-                      ? 'Not available on web'
-                      : isRecording 
-                        ? 'Tap to stop and upload'
-                        : 'Record lectures, meetings, or conversations'
+                  <Text style={styles.optionDescription}>
+                    {isRecording 
+                      ? 'Tap to stop and upload'
+                      : 'Record lectures, meetings, or conversations'
                     }
                   </Text>
                 </View>
@@ -902,11 +860,35 @@ function createStyles(colors: any) {
     },
     logoContainer: {
       flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
     },
-    logoImage: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+    appIconContainer: {
+      width: 48,
+      height: 48,
+      backgroundColor: colors.primary + '15',
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    appIconText: {
+      fontSize: 24,
+      textAlign: 'center',
+    },
+    appInfo: {
+      flex: 1,
+    },
+    appName: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 2,
+    },
+    appTagline: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: '500',
     },
     topBarActions: {
       flexDirection: 'row',
@@ -1292,6 +1274,76 @@ function createStyles(colors: any) {
       color: colors.warning,
       marginTop: 8,
       textAlign: 'center',
+    },
+    boltLogo: {
+      marginTop: 20,
+      marginBottom: 10,
+    },
+    // Floating Recording Bubble Styles (LibraryScreen only) - Content Flow Positioning
+    floatingRecordingBubbleContent: {
+      paddingHorizontal: 16,
+      paddingBottom: 16,
+      paddingTop: 24, // Added more top margin
+    },
+    floatingRecordingBubbleInner: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    floatingBubbleContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    // Audio Wave Visualizer Styles
+    audioWaveContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 28,
+      height: 16,
+      gap: 2,
+    },
+    audioWave: {
+      width: 3,
+      height: 16,
+      borderRadius: 1.5,
+      opacity: 0.8,
+    },
+    recordingIndicator: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+    },
+    floatingBubbleText: {
+      flex: 1,
+    },
+    floatingBubbleTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 2,
+    },
+    floatingBubbleTimer: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontVariant: ['tabular-nums'],
+    },
+    floatingBubbleIcon: {
+      width: 32,
+      height: 32,
+      backgroundColor: colors.background,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
   });
 }

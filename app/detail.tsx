@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,8 +17,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X, Play, Pause } from 'lucide-react-native';
+import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X, Play, Pause, Settings, Download } from 'lucide-react-native';
 import { Audio } from 'expo-av';
+import BoltLogo from '@/components/BoltLogo';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {
@@ -828,6 +830,91 @@ export default function DetailScreen() {
     }, 150);
   };
 
+  const handleSettingsPress = () => {
+    console.log('=== SETTINGS BUTTON PRESSED ===');
+    setShowDropdownMenu(false);
+    
+    // Navigate to settings page
+    setTimeout(() => {
+      router.push('/settings');
+    }, 150);
+  };
+
+  const handleDownloadPress = async () => {
+    console.log('=== DOWNLOAD BUTTON PRESSED ===');
+    setShowDropdownMenu(false);
+    
+    if (!upload || !upload.file_url) {
+      Alert.alert('Error', 'No file available for download');
+      return;
+    }
+
+    try {
+      // For React Native, we need to use a different approach
+      // Create a modified URL that preserves the filename for download
+      const originalUrl = upload.file_url;
+      const displayFileName = upload.file_name;
+      
+      // Try to create a blob URL with proper filename (for web environments)
+      if (typeof window !== 'undefined' && window.document) {
+        // Web environment - use blob download with correct filename
+        const response = await fetch(originalUrl);
+        const blob = await response.blob();
+        
+        // Create a temporary URL for the blob
+        const url = URL.createObjectURL(blob);
+        
+        // Create a temporary link element to trigger download with correct filename
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = displayFileName; // Use the renamed/display filename
+        document.body.appendChild(link);
+        link.click();
+        
+        // Clean up
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        console.log(`File downloaded with filename: ${displayFileName}`);
+      } else {
+        // Mobile environment - use Linking with notification about filename
+        const supported = await Linking.canOpenURL(originalUrl);
+        
+        if (supported) {
+          await Linking.openURL(originalUrl);
+          // Show user what the display name should be since we can't control the download filename
+          Alert.alert(
+            'Download Started', 
+            `File is downloading. Display name: "${displayFileName}"`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert('Error', 'Unable to download file. Please try again later.');
+        }
+      }
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      
+      // Fallback to opening URL directly
+      try {
+        const supported = await Linking.canOpenURL(upload.file_url);
+        if (supported) {
+          await Linking.openURL(upload.file_url);
+          Alert.alert(
+            'Download Started', 
+            `File is downloading. Display name: "${upload.file_name}"`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert('Error', 'Unable to download file. Please try again later.');
+        }
+      } catch (fallbackError) {
+        console.error('Fallback download also failed:', fallbackError);
+        Alert.alert('Error', 'Failed to download file. Please try again later.');
+      }
+    }
+  };
+
   const handleConfirmDelete = () => {
     console.log('=== DELETE CONFIRMED ===');
     handleDelete();
@@ -1215,6 +1302,9 @@ export default function DetailScreen() {
             <Text style={styles.contentText}>{getContentText()}</Text>
           }
         </View>
+
+        {/* Bolt Logo at bottom */}
+        <BoltLogo style={styles.boltLogo} />
       </ScrollView>
 
       {/* Dropdown Menu Modal */}
@@ -1236,6 +1326,26 @@ export default function DetailScreen() {
           }}
         >
           <View style={styles.dropdownMenu}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={handleDownloadPress}
+              activeOpacity={0.7}
+            >
+              <Download size={20} color={colors.text} />
+              <Text style={styles.dropdownItemText}>Download File</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={handleSettingsPress}
+              activeOpacity={0.7}
+            >
+              <Settings size={20} color={colors.text} />
+              <Text style={styles.dropdownItemText}>Settings</Text>
+            </TouchableOpacity>
+            
+            <View style={styles.dropdownDivider} />
+            
             <TouchableOpacity
               style={styles.dropdownItem}
               onPress={handleDeletePress}
@@ -1560,9 +1670,16 @@ function createStyles(colors: any) {
       paddingVertical: 12,
       gap: 12,
     },
+    dropdownDivider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 4,
+      marginHorizontal: 12,
+    },
     dropdownItemText: {
       fontSize: 16,
       fontWeight: '500',
+      color: colors.text,
     },
     // Modal styles
     modalOverlay: {
@@ -1827,6 +1944,10 @@ function createStyles(colors: any) {
     },
     noTimestampSegment: {
       opacity: 0.8,
+    },
+    boltLogo: {
+      marginTop: 20,
+      marginBottom: 10,
     },
   });
 }

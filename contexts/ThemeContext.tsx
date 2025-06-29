@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Appearance, ColorSchemeName } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface ThemeContextType {
   isDarkMode: boolean;
   colorScheme: 'light' | 'dark';
   toggleDarkMode: () => void;
+  resetToSystemDefault: () => void;
   colors: {
     background: string;
     surface: string;
@@ -60,27 +62,58 @@ const darkColors = {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [colorScheme, setColorScheme] = useState<'light' | 'dark'>('light');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial color scheme
-    const initialScheme = Appearance.getColorScheme();
-    if (initialScheme) {
-      setColorScheme(initialScheme);
-    }
-
-    // Listen for system theme changes
-    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
-      if (colorScheme) {
-        setColorScheme(colorScheme);
+    // Load saved theme preference or use system default
+    const loadTheme = async () => {
+      try {
+        const savedTheme = await AsyncStorage.getItem('theme_preference');
+        if (savedTheme === 'light' || savedTheme === 'dark') {
+          setColorScheme(savedTheme);
+        } else {
+          // No saved preference, use system default
+          const systemScheme = Appearance.getColorScheme();
+          setColorScheme(systemScheme || 'light');
+        }
+      } catch (error) {
+        console.error('Error loading theme preference:', error);
+        // Fallback to system default
+        const systemScheme = Appearance.getColorScheme();
+        setColorScheme(systemScheme || 'light');
+      } finally {
+        setIsLoading(false);
       }
-    });
+    };
 
-    return () => subscription?.remove();
+    loadTheme();
   }, []);
 
-  const toggleDarkMode = () => {
-    setColorScheme(prev => prev === 'light' ? 'dark' : 'light');
+  const toggleDarkMode = async () => {
+    const newScheme = colorScheme === 'light' ? 'dark' : 'light';
+    setColorScheme(newScheme);
+    
+    try {
+      await AsyncStorage.setItem('theme_preference', newScheme);
+    } catch (error) {
+      console.error('Error saving theme preference:', error);
+    }
   };
+
+  const resetToSystemDefault = async () => {
+    try {
+      await AsyncStorage.removeItem('theme_preference');
+      const systemScheme = Appearance.getColorScheme();
+      setColorScheme(systemScheme || 'light');
+    } catch (error) {
+      console.error('Error resetting theme preference:', error);
+    }
+  };
+
+  // Don't render until theme is loaded
+  if (isLoading) {
+    return null;
+  }
 
   const isDarkMode = colorScheme === 'dark';
   const colors = isDarkMode ? darkColors : lightColors;
@@ -91,6 +124,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         isDarkMode,
         colorScheme,
         toggleDarkMode,
+        resetToSystemDefault,
         colors,
       }}
     >

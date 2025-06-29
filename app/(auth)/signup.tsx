@@ -11,9 +11,11 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { UserPlus, Mail, Lock } from 'lucide-react-native';
+import { UserPlus, Mail, Lock, User } from 'lucide-react-native';
+import BoltLogo from '@/components/BoltLogo';
 
 export default function SignUp() {
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -21,8 +23,13 @@ export default function SignUp() {
   const { signUp } = useAuth();
 
   const handleSignUp = async () => {
-    if (!email || !password || !confirmPassword) {
+    if (!fullName || !email || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (fullName.trim().length < 2) {
+      Alert.alert('Error', 'Please enter your full name');
       return;
     }
 
@@ -38,7 +45,7 @@ export default function SignUp() {
 
     setLoading(true);
     try {
-      await signUp(email, password);
+      await signUp(email, password, fullName.trim());
       Alert.alert('Success', 'Account created successfully! Please sign in.');
     } catch (error: any) {
       Alert.alert('Error', error.message);
@@ -54,12 +61,26 @@ export default function SignUp() {
     >
       <View style={styles.content}>
         <View style={styles.header}>
-          <UserPlus size={48} color="#3B82F6" />
+          <View style={styles.appIcon}>
+            <Text style={styles.appIconText}>🏹</Text>
+          </View>
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>Join Arrow Sparrow to get started</Text>
         </View>
 
         <View style={styles.form}>
+          <View style={styles.inputContainer}>
+            <User size={20} color="#6B7280" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Full Name"
+              value={fullName}
+              onChangeText={setFullName}
+              autoCapitalize="words"
+              autoCorrect={false}
+            />
+          </View>
+
           <View style={styles.inputContainer}>
             <Mail size={20} color="#6B7280" style={styles.inputIcon} />
             <TextInput
@@ -114,6 +135,9 @@ export default function SignUp() {
             <Text style={styles.linkText}>Sign In</Text>
           </Link>
         </View>
+
+        {/* Bolt Logo at bottom */}
+        <BoltLogo style={styles.boltLogo} />
       </View>
     </KeyboardAvoidingView>
   );
@@ -132,6 +156,19 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: 48,
+  },
+  appIcon: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#3B82F6' + '15',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  appIconText: {
+    fontSize: 40,
+    textAlign: 'center',
   },
   title: {
     fontSize: 28,
@@ -199,5 +236,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#3B82F6',
     fontWeight: '600',
+  },
+  boltLogo: {
+    marginTop: 40,
   },
 });

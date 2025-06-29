@@ -2,16 +2,52 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, Modal } from 'react-na
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { User, LogOut, Settings, CircleHelp as HelpCircle, ArrowLeft } from 'lucide-react-native';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
+import BoltLogo from '@/components/BoltLogo';
+import { supabase } from '@/lib/supabase';
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
   const { colors } = useTheme();
   const router = useRouter();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [userProfile, setUserProfile] = useState<{ full_name: string } | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const styles = createStyles(colors);
+
+  // Fetch user profile data
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!user) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching profile:', error);
+          // Fallback to user metadata if profile doesn't exist
+          const fullName = user.user_metadata?.full_name || user.user_metadata?.fullName;
+          if (fullName) {
+            setUserProfile({ full_name: fullName });
+          }
+        } else {
+          setUserProfile(data);
+        }
+      } catch (error) {
+        console.error('Profile fetch error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfile();
+  }, [user]);
 
   // Stable signOut handler for Alert
   const handleSignOutConfirmed = useCallback(async () => {
@@ -47,7 +83,9 @@ export default function ProfileScreen() {
             <User size={32} color={colors.primary} />
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>Welcome!</Text>
+            <Text style={styles.profileName}>
+              {loading ? 'Loading...' : userProfile?.full_name || 'Welcome!'}
+            </Text>
             <Text style={styles.profileEmail}>{user?.email}</Text>
           </View>
         </View>
@@ -115,6 +153,9 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Bolt Logo at bottom */}
+      <BoltLogo style={styles.boltLogo} />
     </View>
   );
 }
@@ -279,6 +320,12 @@ function createStyles(colors: any) {
       fontSize: 16,
       fontWeight: '600',
       color: '#FFFFFF',
+    },
+    boltLogo: {
+      position: 'absolute',
+      bottom: 20,
+      left: 0,
+      right: 0,
     },
   });
 }

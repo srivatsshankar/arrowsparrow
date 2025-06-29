@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch } from 're
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { ArrowLeft, Moon, Sun, Bell, Shield, CircleHelp as HelpCircle, FileText, Smartphone, Globe, Download, Trash2 } from 'lucide-react-native';
+import BoltLogo from '@/components/BoltLogo';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -136,24 +137,24 @@ export default function SettingsScreen() {
                     styles.settingItem,
                     itemIndex === section.items.length - 1 && styles.lastItem,
                   ]}
-                  onPress={item.onPress}
+                  onPress={item.type === 'navigation' && 'onPress' in item ? item.onPress : undefined}
                   disabled={item.type === 'info' || item.type === 'toggle'}
                   activeOpacity={item.type === 'navigation' ? 0.7 : 1}
                 >
                   <View style={styles.settingItemLeft}>
                     <View style={[
                       styles.iconContainer,
-                      item.destructive && styles.destructiveIconContainer
+                      'destructive' in item && item.destructive && styles.destructiveIconContainer
                     ]}>
                       <item.icon 
                         size={20} 
-                        color={item.destructive ? colors.error : colors.primary} 
+                        color={('destructive' in item && item.destructive) ? colors.error : colors.primary} 
                       />
                     </View>
                     <View style={styles.settingItemText}>
                       <Text style={[
                         styles.settingItemTitle,
-                        item.destructive && styles.destructiveText
+                        'destructive' in item && item.destructive && styles.destructiveText
                       ]}>
                         {item.title}
                       </Text>
@@ -163,7 +164,7 @@ export default function SettingsScreen() {
                     </View>
                   </View>
                   
-                  {item.type === 'toggle' && (
+                  {item.type === 'toggle' && 'value' in item && 'onToggle' in item && (
                     <Switch
                       value={item.value}
                       onValueChange={item.onToggle}
@@ -190,6 +191,9 @@ export default function SettingsScreen() {
             Arrow Sparrow helps you learn smarter, not harder
           </Text>
         </View>
+
+        {/* Bolt Logo at bottom */}
+        <BoltLogo style={styles.boltLogo} />
       </ScrollView>
     </View>
   );
@@ -308,6 +312,10 @@ function createStyles(colors: any) {
       color: colors.textSecondary,
       textAlign: 'center',
       opacity: 0.8,
+    },
+    boltLogo: {
+      marginTop: 20,
+      marginBottom: 10,
     },
   });
 }

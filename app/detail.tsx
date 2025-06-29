@@ -62,7 +62,13 @@ export default function DetailScreen() {
         .single();
 
       if (error) {
-        console.error('Error fetching upload detail:', error);
+        // Handle the case where no record is found
+        if (error.code === 'PGRST116') {
+          console.log('Upload not found or user does not have permission to view it');
+          setUpload(null);
+        } else {
+          console.error('Error fetching upload detail:', error);
+        }
         return;
       }
 

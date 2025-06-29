@@ -203,11 +203,12 @@ export default function LibraryScreen() {
     const uri = recording.getURI();
     
     if (uri) {
+      // Close modal immediately when upload begins
+      closeModal();
       await handleFileUpload(uri, 'audio', 'recording.m4a');
     }
     
     setRecording(null);
-    closeModal();
   };
 
   const pickDocument = async () => {
@@ -219,8 +220,9 @@ export default function LibraryScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const file = result.assets[0];
-        await handleFileUpload(file.uri, 'document', file.name);
+        // Close modal immediately when upload begins
         closeModal();
+        await handleFileUpload(file.uri, 'document', file.name);
       }
     } catch (error) {
       console.error('Error picking document:', error);

@@ -116,12 +116,27 @@ Deno.serve(async (req: Request) => {
   }
 });
 
+// Helper function to format timestamp in seconds to MM:SS format
+function formatTimestamp(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
 async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, supabase: any): Promise<string> {
   if (!ELEVEN_LABS_API_KEY) {
     throw new Error('Eleven Labs API key not configured. Please set ELEVEN_LABS_API_KEY in your Supabase Edge Function environment variables.');
   }
 
   try {
+    // Import the Eleven Labs client
+    const { ElevenLabsClient } = await import('npm:@elevenlabs/elevenlabs-js');
+    
+    // Initialize the client with API key
+    const elevenlabs = new ElevenLabsClient({
+      apiKey: ELEVEN_LABS_API_KEY,
+    });
+
     // Download audio file
     const audioResponse = await fetch(fileUrl);
     if (!audioResponse.ok) {
@@ -129,49 +144,54 @@ async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, sup
     }
     
     const audioBuffer = await audioResponse.arrayBuffer();
+    
+    // Create audio blob for Eleven Labs client
+    const audioBlob = new Blob([audioBuffer], { type: "audio/mp3" });
 
-    // Send to Eleven Labs for transcription
-    const formData = new FormData();
-    formData.append('audio', new Blob([audioBuffer]), 'audio.m4a');
-    formData.append('model', 'whisper-1');
-    formData.append('response_format', 'verbose_json');
-
-    const transcriptionResponse = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
-      method: 'POST',
-      headers: {
-        'xi-api-key': ELEVEN_LABS_API_KEY,
-      },
-      body: formData,
+    // Use Eleven Labs client for transcription
+    const transcription = await elevenlabs.speechToText.convert({
+      file: audioBlob,
+      modelId: "scribe_v1", // Using the supported model
+      tagAudioEvents: true, // Tag audio events like laughter, applause, etc.
+      languageCode: "eng", // Language of the audio file
+      diarize: true, // Whether to annotate who is speaking
     });
 
-    if (!transcriptionResponse.ok) {
-      const errorText = await transcriptionResponse.text();
-      console.error('Eleven Labs API error:', errorText);
-      throw new Error(`Transcription failed: ${transcriptionResponse.statusText}`);
-    }
-
-    const transcriptionData = await transcriptionResponse.json();
+    console.log('Eleven Labs transcription response:', transcription);
     
-    if (!transcriptionData.text) {
+    if (!transcription || !transcription.text) {
       throw new Error('No transcription text received from Eleven Labs');
     }
     
-    // Save transcription to database
+    // Store the entire JSON response from Eleven Labs API in transcription_text
+    const transcriptionData = {
+      upload_id: uploadId,
+      transcription_text: JSON.stringify(transcription),
+      // Add new fields with fallbacks
+      audio_events: transcription.audioEvents || {},
+      language_detected: transcription.detectedLanguage || 'eng',
+    };
+
+    console.log('Storing transcription data:', {
+      upload_id: uploadId,
+      transcription_json_preview: JSON.stringify(transcription).substring(0, 500) + '...',
+      has_segments: !!(transcription.segments && transcription.segments.length > 0),
+      segments_count: transcription.segments?.length || 0,
+      plain_text_preview: transcription.text.substring(0, 200) + '...'
+    });
+
     const { error: insertError } = await supabase
       .from('transcriptions')
-      .insert({
-        upload_id: uploadId,
-        transcription_text: transcriptionData.text,
-        timestamps: transcriptionData.segments || {},
-        diarization: transcriptionData.speakers || {},
-      });
+      .insert(transcriptionData);
 
     if (insertError) {
       console.error('Failed to save transcription:', insertError);
       throw new Error('Failed to save transcription to database');
     }
 
-    return transcriptionData.text;
+    // Return the original plain text for AI processing (summary/key points)
+    // The formatted text with timestamps is stored in the database
+    return transcription.text;
   } catch (error) {
     console.error('Eleven Labs processing error:', error);
     throw error;
@@ -283,7 +303,8 @@ async function extractPDFText(buffer: ArrayBuffer): Promise<string> {
     return fullText;
   } catch (error) {
     console.error('PDF extraction error:', error);
-    throw new Error(`Failed to extract text from PDF: ${error.message}`);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    throw new Error(`Failed to extract text from PDF: ${errorMessage}`);
   }
 }
 
@@ -315,7 +336,8 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
     return cleanText;
   } catch (error) {
     console.error('DOCX extraction error:', error);
-    throw new Error(`Failed to extract text from DOCX: ${error.message}`);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    throw new Error(`Failed to extract text from DOCX: ${errorMessage}`);
   }
 }
 

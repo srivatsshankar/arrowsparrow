@@ -7,7 +7,12 @@
     "dev": "expo start",
     "devweb": "expo start --web",
     "build:web": "expo export --platform web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "supabase:push": "npx supabase db push",
+    "supabase:deploy": "npx supabase functions deploy",
+    "supabase:status": "npx supabase status",
+    "supabase:migration-list": "npx supabase migration list",
+    "supabase:deploy-all": "npm run supabase:push && npm run supabase:deploy"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",

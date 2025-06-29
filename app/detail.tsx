@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,20 +8,68 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X } from 'lucide-react-native';
+import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X, Play, Pause } from 'lucide-react-native';
+import { Audio } from 'expo-av';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {
-  transcriptions?: Array<{ transcription_text: string; timestamps?: any; diarization?: any }>;
+  transcriptions?: Array<{ transcription_text: string }>;
   document_texts?: Array<{ extracted_text: string }>;
   summaries?: Array<{ summary_text: string }>;
   key_points?: Array<{ point_text: string; importance_level: number }>;
+};
+
+// Types for transcription response
+type TranscriptionSegment = {
+  text: string;
+  start: number; // in seconds
+  end: number; // in seconds
+  speaker?: string;
+};
+
+type TranscriptionWord = {
+  text: string;
+  start: number;
+  end: number;
+  type: 'word' | 'spacing';
+  speakerId?: string;
+  logprob?: number;
+};
+
+type SpeakerParagraph = {
+  speaker: string;
+  text: string;
+  start: number;
+  end: number;
+  words: TranscriptionWord[];
+  segments: WordSegment[];
+};
+
+type WordSegment = {
+  text: string;
+  start: number;
+  end: number;
+  words: TranscriptionWord[];
+};
+
+type ElevenLabsTranscription = {
+  text: string;
+  languageCode?: string;
+  languageProbability?: number;
+  words?: TranscriptionWord[];
+  segments?: TranscriptionSegment[];
+  timestamps?: Array<{
+    text: string;
+    start: number;
+    end: number;
+  }>;
 };
 
 export default function DetailScreen() {
@@ -34,15 +82,108 @@ export default function DetailScreen() {
   const [deleting, setDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDropdownMenu, setShowDropdownMenu] = useState(false);
-  const [activeTab, setActiveTab] = useState<'content' | 'summary' | 'keypoints'>('content');
+  
+  // Audio player state
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [currentPosition, setCurrentPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
+  const [hoveredSegmentIndex, setHoveredSegmentIndex] = useState<number | null>(null);
+  const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
+  const [hoveredWordIndex, setHoveredWordIndex] = useState<number | null>(null);
+  const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+  const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+  const [progressBarWidth, setProgressBarWidth] = useState<number>(200);
+  
+  const scrollViewRef = useRef<ScrollView>(null);
+  const summaryRef = useRef<View>(null);
+  const keyPointsRef = useRef<View>(null);
+  const contentRef = useRef<View>(null);
 
   const styles = createStyles(colors);
+
+  const scrollToSection = (sectionRef: React.RefObject<View>) => {
+    if (sectionRef.current && scrollViewRef.current) {
+      sectionRef.current.measureLayout(
+        scrollViewRef.current.getInnerViewNode?.() || scrollViewRef.current,
+        (x, y) => {
+          scrollViewRef.current?.scrollTo({ y: y - 20, animated: true });
+        },
+        () => console.log('Failed to measure layout')
+      );
+    }
+  };
 
   useEffect(() => {
     if (id && user) {
       fetchUploadDetail();
     }
   }, [id, user]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+    };
+  }, [sound]);
+
+  // Audio position tracking for segment-level highlighting
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (sound && isPlaying) {
+      interval = setInterval(async () => {
+        try {
+          const status = await sound.getStatusAsync();
+          if (status.isLoaded && status.positionMillis !== undefined) {
+            const positionSeconds = status.positionMillis / 1000;
+            setCurrentPosition(positionSeconds);
+            
+            // Find active segment based on current position
+            const transcriptionData = getTranscriptionData();
+            if (transcriptionData && transcriptionData.words && transcriptionData.words.length > 0) {
+              const speakerParagraphs = createSpeakerParagraphs(transcriptionData.words);
+              let activeSegmentId: string | null = null;
+              
+              // Find which segment contains the current position
+              for (let paragraphIndex = 0; paragraphIndex < speakerParagraphs.length; paragraphIndex++) {
+                const paragraph = speakerParagraphs[paragraphIndex];
+                for (let segmentIndex = 0; segmentIndex < paragraph.segments.length; segmentIndex++) {
+                  const segment = paragraph.segments[segmentIndex];
+                  
+                  if (positionSeconds >= segment.start && positionSeconds <= segment.end) {
+                    activeSegmentId = `${paragraphIndex}-${segmentIndex}`;
+                    console.log(`Active segment: "${segment.text}" (${segment.start}s - ${segment.end}s)`);
+                    break;
+                  }
+                }
+                if (activeSegmentId) break;
+              }
+              
+              // Update state only if the active segment changed
+              setActiveSegmentId(activeSegmentId);
+            }
+          }
+        } catch (error) {
+          console.error('Error getting audio status:', error);
+        }
+      }, 100);
+    } else {
+      // Clear active segment when not playing
+      if (activeSegmentId !== null) {
+        setActiveSegmentId(null);
+      }
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [sound, isPlaying]);
 
   const fetchUploadDetail = async () => {
     if (!user || !id) return;
@@ -52,7 +193,7 @@ export default function DetailScreen() {
         .from('uploads')
         .select(`
           *,
-          transcriptions (transcription_text, timestamps, diarization),
+          transcriptions (transcription_text),
           document_texts (extracted_text),
           summaries (summary_text),
           key_points (point_text, importance_level)
@@ -79,6 +220,361 @@ export default function DetailScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Parse transcription data and extract segments with timestamps
+  const getTranscriptionSegments = (): TranscriptionSegment[] => {
+    if (!upload || !upload.transcriptions || upload.transcriptions.length === 0) {
+      console.log('No upload or transcriptions found');
+      return [];
+    }
+
+    try {
+      const transcriptionText = upload.transcriptions[0].transcription_text;
+      console.log('Raw transcription text:', transcriptionText);
+      
+      // Try to parse as JSON first
+      let transcriptionData: ElevenLabsTranscription;
+      try {
+        transcriptionData = JSON.parse(transcriptionText);
+        console.log('Parsed transcription data:', transcriptionData);
+      } catch (parseError) {
+        console.log('Failed to parse as JSON, treating as plain text:', parseError);
+        // If not JSON, create a single segment with the entire text
+        return [{
+          text: transcriptionText,
+          start: 0,
+          end: 0,
+        }];
+      }
+      
+      // Check for pre-existing segments first (legacy format)
+      if (transcriptionData.segments && transcriptionData.segments.length > 0) {
+        console.log('Found pre-existing segments:', transcriptionData.segments.length);
+        return transcriptionData.segments;
+      } 
+      
+      // Check for timestamps array (alternative format)
+      if (transcriptionData.timestamps && transcriptionData.timestamps.length > 0) {
+        console.log('Found timestamps array:', transcriptionData.timestamps.length);
+        return transcriptionData.timestamps.map(item => ({
+          text: item.text,
+          start: item.start,
+          end: item.end
+        }));
+      }
+      
+      // New format: Create segments from words array
+      if (transcriptionData.words && transcriptionData.words.length > 0) {
+        console.log('Found words array, creating segments:', transcriptionData.words.length);
+        return createSegmentsFromWords(transcriptionData.words);
+      }
+      
+      // Check if it has text but no segments/timestamps/words - create single segment
+      if (transcriptionData.text) {
+        console.log('Found text but no segments/timestamps/words, creating single segment');
+        return [{
+          text: transcriptionData.text,
+          start: 0,
+          end: 0,
+        }];
+      }
+      
+      console.log('No usable transcript data found');
+      return [];
+    } catch (error) {
+      console.error('Error parsing transcription data:', error);
+      return [];
+    }
+  };
+
+  // Get the raw transcription data
+  const getTranscriptionData = (): ElevenLabsTranscription | null => {
+    if (!upload || !upload.transcriptions || upload.transcriptions.length === 0) {
+      return null;
+    }
+
+    try {
+      const transcriptionText = upload.transcriptions[0].transcription_text;
+      return JSON.parse(transcriptionText);
+    } catch (error) {
+      console.error('Error parsing transcription data:', error);
+      return null;
+    }
+  };
+
+  // Create speaker paragraphs from words array
+  const createSpeakerParagraphs = (words: TranscriptionWord[]): SpeakerParagraph[] => {
+    const paragraphs: SpeakerParagraph[] = [];
+    let currentParagraph: SpeakerParagraph | null = null;
+    
+    console.log('Creating speaker paragraphs from words array:', words.length);
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const speakerId = word.speakerId || 'speaker_0';
+      
+      // Start a new paragraph if speaker changes or we don't have one
+      if (!currentParagraph || currentParagraph.speaker !== speakerId) {
+        // Finalize current paragraph and create segments
+        if (currentParagraph) {
+          currentParagraph.segments = createSegmentsFromParagraphWords(currentParagraph.words);
+          paragraphs.push(currentParagraph);
+        }
+        
+        // Start new paragraph
+        currentParagraph = {
+          speaker: speakerId,
+          text: word.text,
+          start: word.start,
+          end: word.end,
+          words: [word],
+          segments: []
+        };
+      } else {
+        // Add to current paragraph
+        currentParagraph.text += word.text;
+        currentParagraph.end = word.end;
+        currentParagraph.words.push(word);
+      }
+    }
+    
+    // Add the last paragraph
+    if (currentParagraph) {
+      currentParagraph.segments = createSegmentsFromParagraphWords(currentParagraph.words);
+      paragraphs.push(currentParagraph);
+    }
+    
+    console.log(`Created ${paragraphs.length} speaker paragraphs from ${words.length} words`);
+    return paragraphs;
+  };
+
+  // Create segments from paragraph words - groups words into meaningful phrases/sentences
+  const createSegmentsFromParagraphWords = (words: TranscriptionWord[]): WordSegment[] => {
+    const segments: WordSegment[] = [];
+    let currentSegment: WordSegment | null = null;
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      
+      // Start new segment if we don't have one
+      if (!currentSegment) {
+        currentSegment = {
+          text: word.text,
+          start: word.start,
+          end: word.end,
+          words: [word]
+        };
+      } else {
+        // Add word to current segment
+        currentSegment.text += word.text;
+        currentSegment.end = word.end;
+        currentSegment.words.push(word);
+      }
+      
+      // Determine if we should end this segment
+      let shouldEndSegment = false;
+      
+      // End segment on sentence-ending punctuation
+      if (word.type === 'word' && /[.!?]$/.test(word.text.trim())) {
+        shouldEndSegment = true;
+      }
+      
+      // End segment on natural pauses (longer spacing)
+      const nextWordIndex = i + 1;
+      if (nextWordIndex < words.length) {
+        const nextWord = words[nextWordIndex];
+        if (nextWord.type === 'spacing' && (nextWord.end - nextWord.start) > 0.5) {
+          shouldEndSegment = true;
+        }
+      }
+      
+      // End segment if it's getting too long (time-based)
+      if (currentSegment.end - currentSegment.start > 6) { // 6 seconds max per segment
+        shouldEndSegment = true;
+      }
+      
+      // End segment if text is getting very long
+      if (currentSegment.text.length > 100) {
+        // Look for a natural break point (comma, pause, etc.)
+        if (word.type === 'word' && /[,;:]$/.test(word.text.trim())) {
+          shouldEndSegment = true;
+        }
+      }
+      
+      // Always end segment at the last word
+      if (i === words.length - 1) {
+        shouldEndSegment = true;
+      }
+      
+      if (shouldEndSegment && currentSegment) {
+        // Clean up the text and add to segments
+        const cleanText = currentSegment.text.trim();
+        if (cleanText.length > 0) {
+          const newSegment = {
+            text: cleanText,
+            start: currentSegment.start,
+            end: currentSegment.end,
+            words: currentSegment.words
+          };
+          segments.push(newSegment);
+          console.log(`Created segment: "${cleanText}" (${newSegment.start}s - ${newSegment.end}s)`);
+        }
+        currentSegment = null;
+      }
+    }
+    
+    return segments;
+  };
+
+  // Create segments from words array by grouping words into sentences
+  const createSegmentsFromWords = (words: TranscriptionWord[]): TranscriptionSegment[] => {
+    const segments: TranscriptionSegment[] = [];
+    let currentSegment: TranscriptionSegment | null = null;
+    
+    console.log('Creating segments from words array:', words.length);
+    
+    // Group words into segments (sentences or logical chunks)
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      
+      // Include all text (words and spacing)
+      if (!currentSegment) {
+        // Start a new segment
+        currentSegment = {
+          text: word.text,
+          start: word.start,
+          end: word.end,
+          speaker: word.speakerId
+        };
+      } else {
+        // Add to current segment
+        currentSegment.text += word.text;
+        currentSegment.end = word.end;
+      }
+      
+      // Determine if we should end this segment
+      let shouldEndSegment = false;
+      
+      // End segment on sentence-ending punctuation
+      if (word.type === 'word' && /[.!?]$/.test(word.text.trim())) {
+        shouldEndSegment = true;
+      }
+      
+      // End segment if it's getting too long (time-based)
+      if (currentSegment.end - currentSegment.start > 8) { // 8 seconds max per segment
+        shouldEndSegment = true;
+      }
+      
+      // End segment if text is getting very long
+      if (currentSegment.text.length > 150) {
+        // Look for a natural break point
+        if (word.type === 'spacing' && word.text.includes(' ')) {
+          shouldEndSegment = true;
+        }
+      }
+      
+      // Always end segment at the last word
+      if (i === words.length - 1) {
+        shouldEndSegment = true;
+      }
+      
+      if (shouldEndSegment && currentSegment) {
+        // Clean up the text and add to segments
+        const cleanText = currentSegment.text.trim();
+        if (cleanText.length > 0) {
+          segments.push({
+            text: cleanText,
+            start: currentSegment.start,
+            end: currentSegment.end,
+            speaker: currentSegment.speaker
+          });
+          console.log(`Created segment ${segments.length}: "${cleanText.substring(0, 50)}..." (${currentSegment.start}s - ${currentSegment.end}s)`);
+        }
+        currentSegment = null;
+      }
+    }
+    
+    console.log(`Successfully created ${segments.length} segments from ${words.length} words`);
+    return segments;
+  };
+
+  // Load and play audio
+  const loadAudio = async () => {
+    if (!upload || upload.file_type !== 'audio') return;
+
+    setAudioLoading(true);
+    
+    try {
+      // Configure audio mode for playback
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: false,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri: upload.file_url },
+        { shouldPlay: false, isLooping: false },
+        onAudioStatusUpdate
+      );
+      
+      setSound(newSound);
+    } catch (error) {
+      console.error('Error loading audio:', error);
+      Alert.alert('Error', 'Failed to load audio file');
+    } finally {
+      setAudioLoading(false);
+    }
+  };
+
+  const onAudioStatusUpdate = (status: any) => {
+    if (status.isLoaded) {
+      setDuration(status.durationMillis ? status.durationMillis / 1000 : 0);
+      setIsPlaying(status.isPlaying);
+      
+      if (status.positionMillis !== undefined) {
+        setCurrentPosition(status.positionMillis / 1000);
+      }
+    }
+  };
+
+  const togglePlayback = async () => {
+    if (!sound) {
+      await loadAudio();
+      return;
+    }
+
+    try {
+      const status = await sound.getStatusAsync();
+      if (status.isLoaded) {
+        if (isPlaying) {
+          await sound.pauseAsync();
+        } else {
+          await sound.playAsync();
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling playback:', error);
+    }
+  };
+
+  const seekToPosition = async (seconds: number) => {
+    if (!sound) return;
+
+    try {
+      await sound.setPositionAsync(seconds * 1000);
+    } catch (error) {
+      console.error('Error seeking audio:', error);
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const handleDelete = async () => {
@@ -232,7 +728,7 @@ export default function DetailScreen() {
       setDeleting(false);
       
       // Navigate back immediately
-      router.back();
+      router.push('/');
       
       // Show success message after navigation
       setTimeout(() => {
@@ -293,12 +789,100 @@ export default function DetailScreen() {
     if (!upload) return '';
     
     if (upload.file_type === 'audio' && upload.transcriptions && upload.transcriptions.length > 0) {
-      return upload.transcriptions[0].transcription_text;
+      const transcriptionText = upload.transcriptions[0].transcription_text;
+      
+      // Try to parse as JSON (new format with complete Eleven Labs response)
+      try {
+        const transcriptionData: ElevenLabsTranscription = JSON.parse(transcriptionText);
+        return transcriptionData.text || transcriptionText;
+      } catch (error) {
+        // If parsing fails, treat as plain text (fallback for old data)
+        return transcriptionText;
+      }
     } else if (upload.file_type === 'document' && upload.document_texts && upload.document_texts.length > 0) {
       return upload.document_texts[0].extracted_text;
     }
     
     return 'No content available';
+  };
+
+  const renderTranscriptionWithTimestamps = () => {
+    if (!upload || upload.file_type !== 'audio') {
+      return <Text style={styles.contentText}>{getContentText()}</Text>;
+    }
+
+    const transcriptionData = getTranscriptionData();
+    
+    if (!transcriptionData || !transcriptionData.words || transcriptionData.words.length === 0) {
+      console.log('No word-level data found, falling back to plain text');
+      return <Text style={styles.contentText}>{getContentText()}</Text>;
+    }
+
+    const speakerParagraphs = createSpeakerParagraphs(transcriptionData.words);
+    console.log('Rendering speaker paragraphs:', speakerParagraphs.length);
+
+    return (
+      <View>
+        {speakerParagraphs.map((paragraph, paragraphIndex) => (
+          <View key={paragraphIndex} style={styles.speakerParagraphContainer}>
+            <Text style={styles.speakerLabel}>
+              {paragraph.speaker.replace('_', ' ').toUpperCase()}
+            </Text>
+            <Text style={styles.paragraphText}>
+              {paragraph.segments.map((segment, segmentIndex) => {
+                const segmentId = `${paragraphIndex}-${segmentIndex}`;
+                const isActiveSegment = activeSegmentId === segmentId;
+                const isHoveredSegment = hoveredSegmentId === segmentId;
+                const isSelectedSegment = selectedSegmentId === segmentId;
+                
+                console.log(`Rendering segment ${segmentId}: "${segment.text}" (${segment.start}s - ${segment.end}s), active: ${isActiveSegment}, hovered: ${isHoveredSegment}`);
+                
+                return (
+                  <Text
+                    key={segmentIndex}
+                    onPress={async () => {
+                      console.log(`Clicked segment: "${segment.text}" at ${segment.start}s`);
+                      
+                      if (isSelectedSegment) {
+                        // Second click on same segment - load audio and seek
+                        console.log('Second click - loading audio and seeking');
+                        if (sound) {
+                          seekToPosition(segment.start);
+                        } else {
+                          await loadAudio();
+                          // After loading, seek to the position
+                          setTimeout(() => {
+                            seekToPosition(segment.start);
+                          }, 100);
+                        }
+                      } else {
+                        // First click - just highlight the segment
+                        console.log('First click - highlighting segment');
+                        setSelectedSegmentId(segmentId);
+                      }
+                    }}
+                    onLongPress={() => {
+                      console.log(`Long press on segment: ${segmentId}`);
+                      setHoveredSegmentId(segmentId);
+                      setTimeout(() => setHoveredSegmentId(null), 200);
+                    }}
+                    style={[
+                      styles.segmentText,
+                      isActiveSegment && !isHoveredSegment && !isSelectedSegment && styles.activeSegmentText,
+                      isHoveredSegment && styles.hoveredSegmentText,
+                      isSelectedSegment && styles.selectedSegmentText,
+                    ]}
+                  >
+                    {segment.text}
+                    {segmentIndex < paragraph.segments.length - 1 ? ' ' : ''}
+                  </Text>
+                );
+              })}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
   };
 
   const getSummaryText = () => {
@@ -332,7 +916,7 @@ export default function DetailScreen() {
         <Text style={styles.errorDescription}>
           The requested content could not be found or you don't have permission to view it.
         </Text>
-        <TouchableOpacity style={styles.errorBackButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.errorBackButton} onPress={() => router.push('/')}>
           <Text style={styles.errorBackButtonText}>Go Back</Text>
         </TouchableOpacity>
       </View>
@@ -345,7 +929,7 @@ export default function DetailScreen() {
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton} 
-          onPress={() => router.back()}
+          onPress={() => router.push('/')}
           activeOpacity={0.7}
         >
           <ArrowLeft size={20} color={colors.text} />
@@ -391,78 +975,141 @@ export default function DetailScreen() {
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'content' && styles.activeTab]}
-          onPress={() => setActiveTab('content')}
+          style={styles.tab}
+          onPress={() => scrollToSection(summaryRef)}
           activeOpacity={0.7}
         >
-          <MessageSquare size={16} color={activeTab === 'content' ? colors.primary : colors.textSecondary} />
-          <Text style={[styles.tabText, activeTab === 'content' && styles.activeTabText]}>
-            {upload.file_type === 'audio' ? 'Transcription' : 'Text'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'summary' && styles.activeTab]}
-          onPress={() => setActiveTab('summary')}
-          activeOpacity={0.7}
-        >
-          <FileText size={16} color={activeTab === 'summary' ? colors.primary : colors.textSecondary} />
-          <Text style={[styles.tabText, activeTab === 'summary' && styles.activeTabText]}>
+          <FileText size={16} color={colors.textSecondary} />
+          <Text style={styles.tabText}>
             Summary
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'keypoints' && styles.activeTab]}
-          onPress={() => setActiveTab('keypoints')}
+          style={styles.tab}
+          onPress={() => scrollToSection(keyPointsRef)}
           activeOpacity={0.7}
         >
-          <List size={16} color={activeTab === 'keypoints' ? colors.primary : colors.textSecondary} />
-          <Text style={[styles.tabText, activeTab === 'keypoints' && styles.activeTabText]}>
+          <List size={16} color={colors.textSecondary} />
+          <Text style={styles.tabText}>
             Key Points
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tab}
+          onPress={() => scrollToSection(contentRef)}
+          activeOpacity={0.7}
+        >
+          <MessageSquare size={16} color={colors.textSecondary} />
+          <Text style={styles.tabText}>
+            {upload.file_type === 'audio' ? 'Transcription' : 'Text'}
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* Content */}
-      <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
-        {activeTab === 'content' && (
-          <View style={styles.contentSection}>
-            <Text style={styles.contentText}>
-              {getContentText()}
-            </Text>
-          </View>
-        )}
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.contentContainer} 
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Summary Section */}
+        <View ref={summaryRef} style={styles.contentSection}>
+          <Text style={styles.sectionTitle}>Summary</Text>
+          <Text style={styles.contentText}>
+            {getSummaryText()}
+          </Text>
+        </View>
 
-        {activeTab === 'summary' && (
-          <View style={styles.contentSection}>
-            <Text style={styles.contentText}>
-              {getSummaryText()}
-            </Text>
-          </View>
-        )}
-
-        {activeTab === 'keypoints' && (
-          <View style={styles.contentSection}>
-            {getKeyPoints().length > 0 ? (
-              getKeyPoints().map((point, index) => (
-                <View key={index} style={styles.keyPointItem}>
-                  <View style={styles.keyPointHeader}>
-                    <View style={styles.keyPointNumber}>
-                      <Text style={styles.keyPointNumberText}>{index + 1}</Text>
-                    </View>
+        {/* Key Points Section */}
+        <View ref={keyPointsRef} style={styles.contentSection}>
+          <Text style={styles.sectionTitle}>Key Points</Text>
+          {getKeyPoints().length > 0 ? (
+            getKeyPoints().map((point, index) => (
+              <View key={index} style={styles.keyPointItem}>
+                <View style={styles.keyPointHeader}>
+                  <View style={styles.keyPointNumber}>
+                    <Text style={styles.keyPointNumberText}>{index + 1}</Text>
                   </View>
-                  <Text style={styles.keyPointText}>{point.point_text}</Text>
                 </View>
-              ))
-            ) : (
-              <View style={styles.emptyState}>
-                <List size={32} color={colors.textSecondary} />
-                <Text style={styles.emptyStateText}>No key points available</Text>
+                <Text style={styles.keyPointText}>{point.point_text}</Text>
               </View>
-            )}
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <List size={32} color={colors.textSecondary} />
+              <Text style={styles.emptyStateText}>No key points available</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Audio Player Section - Only for audio files */}
+        {upload.file_type === 'audio' && (
+          <View style={styles.audioPlayerSection}>
+            <Text style={styles.sectionTitle}>Audio Player</Text>
+            <View style={styles.audioPlayerControls}>
+              <TouchableOpacity
+                style={styles.playButton}
+                onPress={togglePlayback}
+                disabled={audioLoading}
+                activeOpacity={0.7}
+              >
+                {audioLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : isPlaying ? (
+                  <Pause size={20} color="#FFFFFF" />
+                ) : (
+                  <Play size={20} color="#FFFFFF" />
+                )}
+              </TouchableOpacity>
+              
+              <View style={styles.audioInfo}>
+                <Text style={styles.audioTime}>
+                  {formatTime(currentPosition)} / {formatTime(duration)}
+                </Text>
+                <View style={styles.progressContainer}>
+                  <TouchableOpacity
+                    style={styles.progressBar}
+                    onLayout={(event) => {
+                      const { width } = event.nativeEvent.layout;
+                      setProgressBarWidth(width);
+                    }}
+                    onPress={(event) => {
+                      if (duration > 0 && sound) {
+                        const { locationX } = event.nativeEvent;
+                        const percentage = locationX / progressBarWidth;
+                        const newPosition = Math.max(0, Math.min(duration, percentage * duration));
+                        console.log(`Seeking to position: ${newPosition.toFixed(2)}s (${(percentage * 100).toFixed(1)}%)`);
+                        seekToPosition(newPosition);
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <View 
+                      style={[
+                        styles.progressFill, 
+                        { width: duration > 0 ? `${(currentPosition / duration) * 100}%` : '0%' }
+                      ]} 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
           </View>
         )}
+
+        {/* Content/Transcription Section */}
+        <View ref={contentRef} style={styles.contentSection}>
+          <Text style={styles.sectionTitle}>
+            {upload.file_type === 'audio' ? 'Transcription' : 'Document Text'}
+          </Text>
+          
+          {upload.file_type === 'audio' ? 
+            renderTranscriptionWithTimestamps() : 
+            <Text style={styles.contentText}>{getContentText()}</Text>
+          }
+        </View>
       </ScrollView>
 
       {/* Dropdown Menu Modal */}
@@ -707,16 +1354,10 @@ function createStyles(colors: any) {
       borderRadius: 8,
       gap: 6,
     },
-    activeTab: {
-      backgroundColor: colors.primary + '15',
-    },
     tabText: {
       fontSize: 14,
       fontWeight: '500',
       color: colors.textSecondary,
-    },
-    activeTabText: {
-      color: colors.primary,
     },
     contentContainer: {
       flex: 1,
@@ -733,6 +1374,13 @@ function createStyles(colors: any) {
       shadowOpacity: 0.05,
       shadowRadius: 4,
       elevation: 2,
+      marginBottom: 16,
+    },
+    sectionTitle: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 16,
     },
     contentText: {
       fontSize: 16,
@@ -892,6 +1540,187 @@ function createStyles(colors: any) {
     },
     buttonDisabled: {
       opacity: 0.6,
+    },
+    // Audio player styles
+    audioPlayerSection: {
+      backgroundColor: colors.background,
+      borderRadius: 16,
+      padding: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+      marginBottom: 16,
+    },
+    audioPlayerControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingTop: 16,
+    },
+    playButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    audioInfo: {
+      flex: 1,
+    },
+    audioTime: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    progressContainer: {
+      width: '100%',
+    },
+    progressBar: {
+      height: 4,
+      backgroundColor: colors.border,
+      borderRadius: 2,
+      overflow: 'hidden',
+    },
+    progressFill: {
+      height: '100%',
+      backgroundColor: colors.primary,
+      borderRadius: 2,
+    },
+    // Speaker-based transcription styles
+    speakerParagraphContainer: {
+      marginBottom: 20,
+    },
+    speakerLabel: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: colors.primary,
+      marginBottom: 8,
+      letterSpacing: 0.5,
+    },
+    paragraphContainer: {
+      paddingVertical: 4,
+    },
+    paragraphText: {
+      fontSize: 16,
+      lineHeight: 26,
+      color: colors.text,
+    },
+    wordText: {
+      fontSize: 16,
+      lineHeight: 26,
+      color: colors.text,
+    },
+    activeWordText: {
+      backgroundColor: colors.primary + '60',
+      color: colors.text,
+      fontWeight: '600',
+    },
+    segmentText: {
+      // Inherit styles from parent paragraphText
+    },
+    activeSegmentText: {
+      backgroundColor: colors.primary + '40',
+      color: colors.text,
+      fontWeight: '600',
+    },
+    hoveredSegmentText: {
+      backgroundColor: colors.primary + '20',
+      color: colors.text,
+      fontWeight: '500',
+    },
+    selectedSegmentText: {
+      backgroundColor: colors.primary + '30',
+      color: colors.text,
+      fontWeight: '500',
+    },
+    // Legacy transcription styles (kept for fallback)
+    transcriptionSegmentContainer: {
+      marginVertical: 4,
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    transcriptionSegment: {
+      padding: 16,
+      borderRadius: 12,
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'flex-start',
+    },
+    activeSegmentContainer: {
+      backgroundColor: colors.primary + '20',
+      borderWidth: 2,
+      borderColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4,
+      elevation: 4,
+    },
+    hoveredSegmentContainer: {
+      backgroundColor: colors.primary + '10',
+      borderWidth: 1,
+      borderColor: colors.primary + '60',
+    },
+    activeSegment: {
+      backgroundColor: colors.primary + '25',
+      borderLeftWidth: 6,
+      borderLeftColor: colors.primary,
+      paddingLeft: 20,
+    },
+    hoveredSegment: {
+      backgroundColor: colors.primary + '15',
+      borderLeftWidth: 3,
+      borderLeftColor: colors.primary + '80',
+      paddingLeft: 18,
+    },
+    timestampContainer: {
+      marginRight: 8,
+      marginBottom: 4,
+    },
+    activeTimestampContainer: {
+      transform: [{ scale: 1.05 }],
+    },
+    hoveredTimestampContainer: {
+      transform: [{ scale: 1.02 }],
+    },
+    timestampText: {
+      fontSize: 13,
+      color: colors.primary,
+      fontWeight: '700',
+      backgroundColor: colors.primary + '15',
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+      overflow: 'hidden',
+    },
+    activeTimestamp: {
+      backgroundColor: colors.primary,
+      color: '#FFFFFF',
+      fontWeight: '800',
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.5,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    hoveredTimestamp: {
+      backgroundColor: colors.primary + '30',
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    noTimestampSegment: {
+      opacity: 0.8,
     },
   });
 }

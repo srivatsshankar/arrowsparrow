@@ -18,7 +18,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings } from 'lucide-react-native';
+import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings, Headphones } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 
@@ -264,6 +264,32 @@ export default function LibraryScreen() {
     } catch (error) {
       console.error('Error picking document:', error);
       Alert.alert('Error', 'Failed to pick document');
+    }
+  };
+
+  const pickAudio = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'audio/*',
+          'audio/mpeg',
+          'audio/mp3',
+          'audio/wav',
+          'audio/m4a',
+          'audio/aac',
+          'audio/ogg',
+          'audio/flac'
+        ],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const file = result.assets[0];
+        await handleFileUpload(file.uri, 'audio', file.name);
+      }
+    } catch (error) {
+      console.error('Error picking audio:', error);
+      Alert.alert('Error', 'Failed to pick audio file');
     }
   };
 
@@ -665,7 +691,7 @@ export default function LibraryScreen() {
             <FileText size={64} color={colors.textSecondary} />
             <Text style={styles.emptyTitle}>No content yet</Text>
             <Text style={styles.emptyDescription}>
-              Upload your first audio recording or document to get started with AI-powered summaries and insights
+              Upload your first audio file or document to get started with AI-powered summaries and insights
             </Text>
             <TouchableOpacity
               style={styles.emptyUploadButton}
@@ -813,6 +839,22 @@ export default function LibraryScreen() {
                   <Text style={styles.optionTitle}>Upload Document</Text>
                   <Text style={styles.optionDescription}>
                     Upload PDF or Word documents for text extraction
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.uploadOption}
+                onPress={pickAudio}
+                activeOpacity={0.8}
+              >
+                <View style={styles.optionIcon}>
+                  <Headphones size={24} color={colors.primary} />
+                </View>
+                <View style={styles.optionContent}>
+                  <Text style={styles.optionTitle}>Upload Audio File</Text>
+                  <Text style={styles.optionDescription}>
+                    Upload MP3, WAV, M4A or other audio files for transcription
                   </Text>
                 </View>
               </TouchableOpacity>

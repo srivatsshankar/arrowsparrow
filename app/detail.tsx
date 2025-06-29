@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import { ArrowLeft, FileText, Mic, Clock, User, Star, MessageSquare, List, Trash2, MoveVertical as MoreVertical, X } from 'lucide-react-native';
@@ -27,12 +28,15 @@ export default function DetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { colors } = useTheme();
   const [upload, setUpload] = useState<UploadWithData | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'content' | 'summary' | 'keypoints'>('content');
+
+  const styles = createStyles(colors);
 
   useEffect(() => {
     if (id && user) {
@@ -159,7 +163,7 @@ export default function DetailScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#3B82F6" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Loading content...</Text>
       </View>
     );
@@ -168,7 +172,7 @@ export default function DetailScreen() {
   if (!upload) {
     return (
       <View style={styles.errorContainer}>
-        <FileText size={48} color="#9CA3AF" />
+        <FileText size={48} color={colors.textSecondary} />
         <Text style={styles.errorTitle}>Content not found</Text>
         <Text style={styles.errorDescription}>
           The requested content could not be found or you don't have permission to view it.
@@ -189,7 +193,7 @@ export default function DetailScreen() {
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={24} color="#111827" />
+          <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -204,7 +208,7 @@ export default function DetailScreen() {
           onPress={() => setShowOptionsModal(true)}
           activeOpacity={0.7}
         >
-          <MoreVertical size={20} color="#6B7280" />
+          <MoreVertical size={20} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -212,9 +216,9 @@ export default function DetailScreen() {
       <View style={styles.fileInfoCard}>
         <View style={styles.fileIconContainer}>
           {upload.file_type === 'audio' ? (
-            <Mic size={24} color="#3B82F6" />
+            <Mic size={24} color={colors.primary} />
           ) : (
-            <FileText size={24} color="#3B82F6" />
+            <FileText size={24} color={colors.primary} />
           )}
         </View>
         <View style={styles.fileInfo}>
@@ -224,11 +228,11 @@ export default function DetailScreen() {
           <View style={styles.statusBadge}>
             <View style={[
               styles.statusDot, 
-              { backgroundColor: upload.status === 'completed' ? '#10B981' : '#F59E0B' }
+              { backgroundColor: upload.status === 'completed' ? colors.success : colors.warning }
             ]} />
             <Text style={[
               styles.statusText,
-              { color: upload.status === 'completed' ? '#10B981' : '#F59E0B' }
+              { color: upload.status === 'completed' ? colors.success : colors.warning }
             ]}>
               {upload.status === 'completed' ? 'Processed' : 'Processing'}
             </Text>
@@ -243,7 +247,7 @@ export default function DetailScreen() {
           onPress={() => setActiveTab('content')}
           activeOpacity={0.7}
         >
-          <MessageSquare size={16} color={activeTab === 'content' ? '#3B82F6' : '#6B7280'} />
+          <MessageSquare size={16} color={activeTab === 'content' ? colors.primary : colors.textSecondary} />
           <Text style={[styles.tabText, activeTab === 'content' && styles.activeTabText]}>
             {upload.file_type === 'audio' ? 'Transcription' : 'Text'}
           </Text>
@@ -254,7 +258,7 @@ export default function DetailScreen() {
           onPress={() => setActiveTab('summary')}
           activeOpacity={0.7}
         >
-          <FileText size={16} color={activeTab === 'summary' ? '#3B82F6' : '#6B7280'} />
+          <FileText size={16} color={activeTab === 'summary' ? colors.primary : colors.textSecondary} />
           <Text style={[styles.tabText, activeTab === 'summary' && styles.activeTabText]}>
             Summary
           </Text>
@@ -265,7 +269,7 @@ export default function DetailScreen() {
           onPress={() => setActiveTab('keypoints')}
           activeOpacity={0.7}
         >
-          <List size={16} color={activeTab === 'keypoints' ? '#3B82F6' : '#6B7280'} />
+          <List size={16} color={activeTab === 'keypoints' ? colors.primary : colors.textSecondary} />
           <Text style={[styles.tabText, activeTab === 'keypoints' && styles.activeTabText]}>
             Key Points
           </Text>
@@ -304,8 +308,8 @@ export default function DetailScreen() {
                         <Star
                           key={i}
                           size={12}
-                          color={i < point.importance_level ? '#F59E0B' : '#E5E7EB'}
-                          fill={i < point.importance_level ? '#F59E0B' : 'transparent'}
+                          color={i < point.importance_level ? colors.warning : colors.border}
+                          fill={i < point.importance_level ? colors.warning : 'transparent'}
                         />
                       ))}
                     </View>
@@ -315,7 +319,7 @@ export default function DetailScreen() {
               ))
             ) : (
               <View style={styles.emptyState}>
-                <List size={32} color="#9CA3AF" />
+                <List size={32} color={colors.textSecondary} />
                 <Text style={styles.emptyStateText}>No key points available</Text>
               </View>
             )}
@@ -339,7 +343,7 @@ export default function DetailScreen() {
                 onPress={() => setShowOptionsModal(false)}
                 activeOpacity={0.7}
               >
-                <X size={20} color="#6B7280" />
+                <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             
@@ -351,7 +355,7 @@ export default function DetailScreen() {
               }}
               activeOpacity={0.7}
             >
-              <Trash2 size={20} color="#EF4444" />
+              <Trash2 size={20} color={colors.error} />
               <Text style={styles.deleteOptionText}>Delete Item</Text>
             </TouchableOpacity>
           </View>
@@ -368,7 +372,7 @@ export default function DetailScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.deleteModal}>
             <View style={styles.deleteIconContainer}>
-              <Trash2 size={32} color="#EF4444" />
+              <Trash2 size={32} color={colors.error} />
             </View>
             
             <Text style={styles.deleteTitle}>Delete Item</Text>
@@ -406,343 +410,345 @@ export default function DetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-    backgroundColor: '#F9FAFB',
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#111827',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorDescription: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-  backButton: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 24,
-    paddingTop: 60,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  backIconButton: {
-    padding: 8,
-    marginRight: 12,
-  },
-  headerContent: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  optionsButton: {
-    padding: 8,
-    marginLeft: 12,
-  },
-  fileInfoCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    margin: 24,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  fileIconContainer: {
-    width: 48,
-    height: 48,
-    backgroundColor: '#EBF4FF',
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  fileInfo: {
-    flex: 1,
-  },
-  fileType: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 24,
-    borderRadius: 12,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  activeTab: {
-    backgroundColor: '#EBF4FF',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
-  activeTabText: {
-    color: '#3B82F6',
-  },
-  contentContainer: {
-    flex: 1,
-    margin: 24,
-    marginTop: 16,
-  },
-  contentSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  contentText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#374151',
-  },
-  keyPointItem: {
-    marginBottom: 20,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  keyPointHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  keyPointNumber: {
-    width: 24,
-    height: 24,
-    backgroundColor: '#3B82F6',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  keyPointNumberText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  importanceContainer: {
-    flexDirection: 'row',
-    gap: 2,
-  },
-  keyPointText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#374151',
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 48,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: '#9CA3AF',
-    marginTop: 12,
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  optionsModal: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 24,
-    minWidth: 280,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  optionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  optionsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  optionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    gap: 12,
-  },
-  deleteOptionText: {
-    fontSize: 16,
-    color: '#EF4444',
-    fontWeight: '500',
-  },
-  deleteModal: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    marginHorizontal: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  deleteIconContainer: {
-    width: 64,
-    height: 64,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  deleteTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  deleteMessage: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-  deleteActions: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  deleteButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  deleteButtonDisabled: {
-    opacity: 0.6,
-  },
-  deleteButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-});
+function createStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: colors.background,
+    },
+    loadingText: {
+      marginTop: 16,
+      fontSize: 16,
+      color: colors.textSecondary,
+    },
+    errorContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+      backgroundColor: colors.background,
+    },
+    errorTitle: {
+      fontSize: 20,
+      fontWeight: '600',
+      color: colors.text,
+      marginTop: 16,
+      marginBottom: 8,
+    },
+    errorDescription: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 24,
+      marginBottom: 24,
+    },
+    backButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+      borderRadius: 8,
+    },
+    backButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 24,
+      paddingTop: 60,
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    backIconButton: {
+      padding: 8,
+      marginRight: 12,
+    },
+    headerContent: {
+      flex: 1,
+    },
+    headerTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    headerSubtitle: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    optionsButton: {
+      padding: 8,
+      marginLeft: 12,
+    },
+    fileInfoCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      margin: 24,
+      padding: 20,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    fileIconContainer: {
+      width: 48,
+      height: 48,
+      backgroundColor: colors.primary + '15',
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 16,
+    },
+    fileInfo: {
+      flex: 1,
+    },
+    fileType: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    statusBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    statusDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      marginRight: 6,
+    },
+    statusText: {
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    tabContainer: {
+      flexDirection: 'row',
+      backgroundColor: colors.surface,
+      marginHorizontal: 24,
+      borderRadius: 12,
+      padding: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    tab: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+      borderRadius: 8,
+      gap: 6,
+    },
+    activeTab: {
+      backgroundColor: colors.primary + '15',
+    },
+    tabText: {
+      fontSize: 14,
+      fontWeight: '500',
+      color: colors.textSecondary,
+    },
+    activeTabText: {
+      color: colors.primary,
+    },
+    contentContainer: {
+      flex: 1,
+      margin: 24,
+      marginTop: 16,
+    },
+    contentSection: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    contentText: {
+      fontSize: 16,
+      lineHeight: 24,
+      color: colors.text,
+    },
+    keyPointItem: {
+      marginBottom: 20,
+      paddingBottom: 20,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    keyPointHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    keyPointNumber: {
+      width: 24,
+      height: 24,
+      backgroundColor: colors.primary,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    keyPointNumberText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    importanceContainer: {
+      flexDirection: 'row',
+      gap: 2,
+    },
+    keyPointText: {
+      fontSize: 16,
+      lineHeight: 24,
+      color: colors.text,
+    },
+    emptyState: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 48,
+    },
+    emptyStateText: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      marginTop: 12,
+    },
+    // Modal styles
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    optionsModal: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 20,
+      marginHorizontal: 24,
+      minWidth: 280,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+      elevation: 8,
+    },
+    optionsHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    optionsTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    closeButton: {
+      padding: 4,
+    },
+    optionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 16,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      gap: 12,
+    },
+    deleteOptionText: {
+      fontSize: 16,
+      color: colors.error,
+      fontWeight: '500',
+    },
+    deleteModal: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 24,
+      marginHorizontal: 24,
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+      elevation: 8,
+    },
+    deleteIconContainer: {
+      width: 64,
+      height: 64,
+      backgroundColor: colors.error + '15',
+      borderRadius: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 16,
+    },
+    deleteTitle: {
+      fontSize: 20,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    deleteMessage: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 24,
+      marginBottom: 24,
+    },
+    deleteActions: {
+      flexDirection: 'row',
+      gap: 12,
+      width: '100%',
+    },
+    cancelButton: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      backgroundColor: colors.border + '40',
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+    },
+    cancelButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    deleteButton: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      backgroundColor: colors.error,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 44,
+    },
+    deleteButtonDisabled: {
+      opacity: 0.6,
+    },
+    deleteButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: '#FFFFFF',
+    },
+  });
+}

@@ -14,8 +14,9 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useRouter } from 'expo-router';
-import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut } from 'lucide-react-native';
+import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 
@@ -29,6 +30,7 @@ type UploadWithData = Upload & {
 
 export default function LibraryScreen() {
   const { user, signOut } = useAuth();
+  const { colors } = useTheme();
   const router = useRouter();
   const [uploads, setUploads] = useState<UploadWithData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +40,8 @@ export default function LibraryScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  const styles = createStyles(colors);
 
   const fetchUploads = async () => {
     if (!user) return;
@@ -81,6 +85,9 @@ export default function LibraryScreen() {
     switch (action) {
       case 'profile':
         router.push('/profile');
+        break;
+      case 'settings':
+        router.push('/settings');
         break;
       case 'signout':
         handleSignOut();
@@ -280,13 +287,13 @@ export default function LibraryScreen() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
-        return <CheckCircle size={16} color="#10B981" />;
+        return <CheckCircle size={16} color={colors.success} />;
       case 'processing':
-        return <Loader size={16} color="#F59E0B" />;
+        return <Loader size={16} color={colors.warning} />;
       case 'error':
-        return <AlertCircle size={16} color="#EF4444" />;
+        return <AlertCircle size={16} color={colors.error} />;
       default:
-        return <Clock size={16} color="#6B7280" />;
+        return <Clock size={16} color={colors.textSecondary} />;
     }
   };
 
@@ -324,7 +331,7 @@ export default function LibraryScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Loader size={32} color="#3B82F6" />
+        <Loader size={32} color={colors.primary} />
         <Text style={styles.loadingText}>Loading your library...</Text>
       </View>
     );
@@ -364,7 +371,7 @@ export default function LibraryScreen() {
               onPress={() => setShowDropdownMenu(true)}
               activeOpacity={0.8}
             >
-              <Menu size={20} color="#374151" />
+              <Menu size={20} color={colors.text} />
             </TouchableOpacity>
           </View>
         </View>
@@ -379,14 +386,14 @@ export default function LibraryScreen() {
 
         {uploading && (
           <View style={styles.uploadingContainer}>
-            <Loader size={20} color="#3B82F6" />
+            <Loader size={20} color={colors.primary} />
             <Text style={styles.uploadingText}>Uploading and processing...</Text>
           </View>
         )}
 
         {uploads.length === 0 ? (
           <View style={styles.emptyState}>
-            <FileText size={64} color="#9CA3AF" />
+            <FileText size={64} color={colors.textSecondary} />
             <Text style={styles.emptyTitle}>No content yet</Text>
             <Text style={styles.emptyDescription}>
               Upload your first audio recording or document to get started with AI-powered summaries and insights
@@ -396,7 +403,7 @@ export default function LibraryScreen() {
               onPress={() => setShowUploadModal(true)}
               activeOpacity={0.8}
             >
-              <Upload size={20} color="#3B82F6" />
+              <Upload size={20} color={colors.primary} />
               <Text style={styles.emptyUploadButtonText}>Upload Content</Text>
             </TouchableOpacity>
           </View>
@@ -413,9 +420,9 @@ export default function LibraryScreen() {
                   <View style={styles.fileInfo}>
                     <View style={styles.fileIcon}>
                       {upload.file_type === 'audio' ? (
-                        <Mic size={20} color="#3B82F6" />
+                        <Mic size={20} color={colors.primary} />
                       ) : (
-                        <FileText size={20} color="#3B82F6" />
+                        <FileText size={20} color={colors.primary} />
                       )}
                     </View>
                     <View style={styles.fileDetails}>
@@ -430,8 +437,8 @@ export default function LibraryScreen() {
                   <View style={styles.statusContainer}>
                     {getStatusIcon(upload.status)}
                     <Text style={[styles.statusText, { 
-                      color: upload.status === 'completed' ? '#10B981' : 
-                             upload.status === 'error' ? '#EF4444' : '#F59E0B' 
+                      color: upload.status === 'completed' ? colors.success : 
+                             upload.status === 'error' ? colors.error : colors.warning 
                     }]}>
                       {getStatusText(upload.status)}
                     </Text>
@@ -486,7 +493,7 @@ export default function LibraryScreen() {
             ))}
 
             <View style={styles.configNote}>
-              <AlertCircle size={16} color="#F59E0B" />
+              <AlertCircle size={16} color={colors.warning} />
               <Text style={styles.configNoteText}>
                 Note: AI processing requires API keys to be configured in your Supabase project settings.
               </Text>
@@ -513,8 +520,17 @@ export default function LibraryScreen() {
               onPress={() => handleMenuItemPress('profile')}
               activeOpacity={0.7}
             >
-              <User size={20} color="#374151" />
+              <User size={20} color={colors.text} />
               <Text style={styles.dropdownItemText}>Profile</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => handleMenuItemPress('settings')}
+              activeOpacity={0.7}
+            >
+              <Settings size={20} color={colors.text} />
+              <Text style={styles.dropdownItemText}>Settings</Text>
             </TouchableOpacity>
             
             <View style={styles.dropdownDivider} />
@@ -524,8 +540,8 @@ export default function LibraryScreen() {
               onPress={() => handleMenuItemPress('signout')}
               activeOpacity={0.7}
             >
-              <LogOut size={20} color="#EF4444" />
-              <Text style={[styles.dropdownItemText, { color: '#EF4444' }]}>Sign Out</Text>
+              <LogOut size={20} color={colors.error} />
+              <Text style={[styles.dropdownItemText, { color: colors.error }]}>Sign Out</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -547,7 +563,7 @@ export default function LibraryScreen() {
                 onPress={() => setShowUploadModal(false)}
                 activeOpacity={0.7}
               >
-                <X size={24} color="#6B7280" />
+                <X size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
@@ -566,7 +582,7 @@ export default function LibraryScreen() {
                   {isRecording ? (
                     <Square size={24} color="#FFFFFF" />
                   ) : (
-                    <Mic size={24} color={Platform.OS === 'web' ? '#9CA3AF' : '#3B82F6'} />
+                    <Mic size={24} color={Platform.OS === 'web' ? colors.textSecondary : colors.primary} />
                   )}
                 </View>
                 <View style={styles.optionContent}>
@@ -591,7 +607,7 @@ export default function LibraryScreen() {
                 activeOpacity={0.8}
               >
                 <View style={styles.optionIcon}>
-                  <FileText size={24} color="#3B82F6" />
+                  <FileText size={24} color={colors.primary} />
                 </View>
                 <View style={styles.optionContent}>
                   <Text style={styles.optionTitle}>Upload Document</Text>
@@ -624,445 +640,450 @@ export default function LibraryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  // Top Navigation Bar - Reduced padding
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16, // Reduced from 24
-    paddingTop: 50, // Reduced from 60
-    paddingBottom: 12, // Reduced from 16
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  logoContainer: {
-    flex: 1,
-  },
-  logoImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  topBarActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  uploadButton: {
-    backgroundColor: '#3B82F6',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 6,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-    height: 38, // Explicit height for consistency
-  },
-  uploadButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  menuButton: {
-    width: 38, // Same as upload button height
-    height: 38, // Same as upload button height
-    borderRadius: 10,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  // Library Header - Reduced padding
-  libraryHeader: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16, // Reduced from 24
-    paddingBottom: 16, // Reduced from 20
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  uploadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12, // Reduced from 16
-    backgroundColor: '#EBF4FF',
-    marginHorizontal: 16, // Reduced from 24
-    marginTop: 12, // Reduced from 16
-    borderRadius: 12,
-    gap: 12,
-  },
-  uploadingText: {
-    fontSize: 16,
-    color: '#3B82F6',
-    fontWeight: '500',
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32, // Reduced from 48
-    marginTop: 40, // Reduced from 60
-  },
-  emptyTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 24,
-    marginBottom: 12,
-  },
-  emptyDescription: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 32,
-  },
-  emptyUploadButton: {
-    backgroundColor: '#EBF4FF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-  },
-  emptyUploadButtonText: {
-    color: '#3B82F6',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  list: {
-    padding: 16, // Reduced from 24
-    gap: 12, // Reduced from 16
-  },
-  uploadCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16, // Reduced from 20
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  fileInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  fileIcon: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#EBF4FF',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  fileDetails: {
-    flex: 1,
-  },
-  fileName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  fileMetadata: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  cardContent: {
-    gap: 12, // Reduced from 16
-  },
-  contentSection: {
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  summaryText: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
-  },
-  keyPoint: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  keyPointBullet: {
-    fontSize: 14,
-    color: '#3B82F6',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  keyPointText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
-  },
-  morePoints: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontStyle: 'italic',
-    marginTop: 4,
-  },
-  tapHint: {
-    backgroundColor: '#F3F4F6',
-    paddingVertical: 6, // Reduced from 8
-    paddingHorizontal: 10, // Reduced from 12
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  tapHintText: {
-    fontSize: 12,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  errorSection: {
-    backgroundColor: '#FEF2F2',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#DC2626',
-    marginBottom: 4,
-  },
-  errorHint: {
-    fontSize: 12,
-    color: '#7F1D1D',
-    fontStyle: 'italic',
-  },
-  configNote: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#FFFBEB',
-    padding: 10, // Reduced from 12
-    borderRadius: 8,
-    gap: 8,
-  },
-  configNoteText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#92400E',
-    lineHeight: 16,
-  },
-  // Dropdown menu styles
-  dropdownOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-    justifyContent: 'flex-start',
-    alignItems: 'flex-end',
-    paddingTop: 110, // Adjusted for reduced top bar height
-    paddingRight: 16, // Reduced from 24
-  },
-  dropdownMenu: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 8,
-    minWidth: 160,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  dropdownItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  dropdownItemText: {
-    fontSize: 16,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  dropdownDivider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginVertical: 4,
-    marginHorizontal: 8,
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20, // Reduced from 24
-    paddingHorizontal: 20, // Reduced from 24
-    paddingBottom: 32, // Reduced from 40
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  modalSubtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginBottom: 24, // Reduced from 32
-  },
-  uploadOptions: {
-    gap: 12, // Reduced from 16
-    marginBottom: 24, // Reduced from 32
-  },
-  uploadOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16, // Reduced from 20
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  recordingOption: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#EF4444',
-  },
-  optionIcon: {
-    width: 48,
-    height: 48,
-    backgroundColor: '#EBF4FF',
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  recordingIcon: {
-    backgroundColor: '#EF4444',
-  },
-  optionContent: {
-    flex: 1,
-  },
-  optionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  optionDescription: {
-    fontSize: 14,
-    color: '#6B7280',
-    lineHeight: 20,
-  },
-  disabledText: {
-    color: '#9CA3AF',
-  },
-  infoSection: {
-    backgroundColor: '#F9FAFB',
-    padding: 16, // Reduced from 20
-    borderRadius: 16,
-    marginBottom: 12, // Reduced from 16
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 12, // Reduced from 16
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10, // Reduced from 12
-  },
-  infoNumber: {
-    width: 24,
-    height: 24,
-    backgroundColor: '#3B82F6',
-    color: '#FFFFFF',
-    borderRadius: 12,
-    textAlign: 'center',
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 24,
-    marginRight: 12,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#6B7280',
-  },
-});
+function createStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: colors.background,
+    },
+    loadingText: {
+      marginTop: 16,
+      fontSize: 16,
+      color: colors.textSecondary,
+    },
+    // Top Navigation Bar - Reduced padding
+    topBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      paddingHorizontal: 16, // Reduced from 24
+      paddingTop: 50, // Reduced from 60
+      paddingBottom: 12, // Reduced from 16
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    logoContainer: {
+      flex: 1,
+    },
+    logoImage: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+    },
+    topBarActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    uploadButton: {
+      backgroundColor: colors.primary,
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 10,
+      gap: 6,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 3,
+      height: 38, // Explicit height for consistency
+    },
+    uploadButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    menuButton: {
+      width: 38, // Same as upload button height
+      height: 38, // Same as upload button height
+      borderRadius: 10,
+      backgroundColor: colors.border + '40',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    // Library Header - Reduced padding
+    libraryHeader: {
+      backgroundColor: colors.surface,
+      paddingHorizontal: 16, // Reduced from 24
+      paddingBottom: 16, // Reduced from 20
+    },
+    title: {
+      fontSize: 28,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    subtitle: {
+      fontSize: 16,
+      color: colors.textSecondary,
+    },
+    uploadingContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 12, // Reduced from 16
+      backgroundColor: colors.primary + '15',
+      marginHorizontal: 16, // Reduced from 24
+      marginTop: 12, // Reduced from 16
+      borderRadius: 12,
+      gap: 12,
+    },
+    uploadingText: {
+      fontSize: 16,
+      color: colors.primary,
+      fontWeight: '500',
+    },
+    emptyState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 32, // Reduced from 48
+      marginTop: 40, // Reduced from 60
+    },
+    emptyTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.text,
+      marginTop: 24,
+      marginBottom: 12,
+    },
+    emptyDescription: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 24,
+      marginBottom: 32,
+    },
+    emptyUploadButton: {
+      backgroundColor: colors.primary + '15',
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+      paddingVertical: 16,
+      borderRadius: 12,
+      gap: 8,
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+    emptyUploadButtonText: {
+      color: colors.primary,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    list: {
+      padding: 16, // Reduced from 24
+      gap: 12, // Reduced from 16
+    },
+    uploadCard: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 16, // Reduced from 20
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    },
+    fileInfo: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    fileIcon: {
+      width: 40,
+      height: 40,
+      backgroundColor: colors.primary + '15',
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    fileDetails: {
+      flex: 1,
+    },
+    fileName: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    fileMetadata: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    statusContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    statusText: {
+      fontSize: 12,
+      fontWeight: '500',
+    },
+    cardContent: {
+      gap: 12, // Reduced from 16
+    },
+    contentSection: {
+      gap: 8,
+    },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    summaryText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 20,
+    },
+    keyPoint: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
+    keyPointBullet: {
+      fontSize: 14,
+      color: colors.primary,
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    keyPointText: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 20,
+    },
+    morePoints: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontStyle: 'italic',
+      marginTop: 4,
+      opacity: 0.7,
+    },
+    tapHint: {
+      backgroundColor: colors.border + '40',
+      paddingVertical: 6, // Reduced from 8
+      paddingHorizontal: 10, // Reduced from 12
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    tapHintText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: '500',
+    },
+    errorSection: {
+      backgroundColor: colors.error + '15',
+      padding: 12,
+      borderRadius: 8,
+      marginTop: 8,
+    },
+    errorText: {
+      fontSize: 14,
+      color: colors.error,
+      marginBottom: 4,
+    },
+    errorHint: {
+      fontSize: 12,
+      color: colors.error,
+      fontStyle: 'italic',
+      opacity: 0.8,
+    },
+    configNote: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      backgroundColor: colors.warning + '15',
+      padding: 10, // Reduced from 12
+      borderRadius: 8,
+      gap: 8,
+    },
+    configNoteText: {
+      flex: 1,
+      fontSize: 12,
+      color: colors.warning,
+      lineHeight: 16,
+    },
+    // Dropdown menu styles
+    dropdownOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-start',
+      alignItems: 'flex-end',
+      paddingTop: 110, // Adjusted for reduced top bar height
+      paddingRight: 16, // Reduced from 24
+    },
+    dropdownMenu: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      paddingVertical: 8,
+      minWidth: 160,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    dropdownItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 12,
+    },
+    dropdownItemText: {
+      fontSize: 16,
+      color: colors.text,
+      fontWeight: '500',
+    },
+    dropdownDivider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 4,
+      marginHorizontal: 8,
+    },
+    // Modal styles
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: colors.overlay,
+      justifyContent: 'flex-end',
+    },
+    modalContainer: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingTop: 20, // Reduced from 24
+      paddingHorizontal: 20, // Reduced from 24
+      paddingBottom: 32, // Reduced from 40
+      maxHeight: '80%',
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    modalTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    closeButton: {
+      padding: 4,
+    },
+    modalSubtitle: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      marginBottom: 24, // Reduced from 32
+    },
+    uploadOptions: {
+      gap: 12, // Reduced from 16
+      marginBottom: 24, // Reduced from 32
+    },
+    uploadOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 16, // Reduced from 20
+      backgroundColor: colors.background,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    recordingOption: {
+      backgroundColor: colors.error + '15',
+      borderColor: colors.error,
+    },
+    optionIcon: {
+      width: 48,
+      height: 48,
+      backgroundColor: colors.primary + '15',
+      borderRadius: 24,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 16,
+    },
+    recordingIcon: {
+      backgroundColor: colors.error,
+    },
+    optionContent: {
+      flex: 1,
+    },
+    optionTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    optionDescription: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 20,
+    },
+    disabledText: {
+      color: colors.textSecondary,
+      opacity: 0.6,
+    },
+    infoSection: {
+      backgroundColor: colors.background,
+      padding: 16, // Reduced from 20
+      borderRadius: 16,
+      marginBottom: 12, // Reduced from 16
+    },
+    infoTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 12, // Reduced from 16
+    },
+    infoItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 10, // Reduced from 12
+    },
+    infoNumber: {
+      width: 24,
+      height: 24,
+      backgroundColor: colors.primary,
+      color: '#FFFFFF',
+      borderRadius: 12,
+      textAlign: 'center',
+      fontSize: 12,
+      fontWeight: '600',
+      lineHeight: 24,
+      marginRight: 12,
+    },
+    infoText: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+  });
+}

@@ -61,6 +61,7 @@ export default function LibraryScreen() {
   // Handle modal animations
   useEffect(() => {
     if (showUploadModal) {
+      // Slide in animation
       Animated.parallel([
         Animated.timing(modalOpacity, {
           toValue: 1,
@@ -74,21 +75,28 @@ export default function LibraryScreen() {
           useNativeDriver: true,
         }),
       ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(modalOpacity, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(modalTranslateY, {
-          toValue: 300,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start();
     }
   }, [showUploadModal]);
+
+  // Function to handle modal close with animation
+  const closeModal = () => {
+    // Slide out animation
+    Animated.parallel([
+      Animated.timing(modalOpacity, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(modalTranslateY, {
+        toValue: 300,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      // Only set showUploadModal to false after animation completes
+      setShowUploadModal(false);
+    });
+  };
 
   const fetchUploads = async () => {
     if (!user) return;
@@ -199,7 +207,7 @@ export default function LibraryScreen() {
     }
     
     setRecording(null);
-    setShowUploadModal(false);
+    closeModal();
   };
 
   const pickDocument = async () => {
@@ -212,7 +220,7 @@ export default function LibraryScreen() {
       if (!result.canceled && result.assets[0]) {
         const file = result.assets[0];
         await handleFileUpload(file.uri, 'document', file.name);
-        setShowUploadModal(false);
+        closeModal();
       }
     } catch (error) {
       console.error('Error picking document:', error);
@@ -275,9 +283,6 @@ export default function LibraryScreen() {
 
   const handleFileUpload = async (uri: string, fileType: 'audio' | 'document', fileName: string) => {
     if (!user) return;
-
-    // Close upload modal immediately
-    setShowUploadModal(false);
 
     // Create uploading file entry
     const uploadingFileId = Date.now().toString();
@@ -779,12 +784,12 @@ export default function LibraryScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Upload Modal - Bottom Slide */}
+      {/* Upload Modal - Bottom Slide with Slide Out Animation */}
       <Modal
         visible={showUploadModal}
         transparent={true}
         animationType="none"
-        onRequestClose={() => setShowUploadModal(false)}
+        onRequestClose={closeModal}
       >
         <Animated.View 
           style={[
@@ -797,7 +802,7 @@ export default function LibraryScreen() {
           <TouchableOpacity 
             style={styles.modalBackdrop}
             activeOpacity={1}
-            onPress={() => setShowUploadModal(false)}
+            onPress={closeModal}
           />
           
           <Animated.View 
@@ -812,7 +817,7 @@ export default function LibraryScreen() {
               <Text style={styles.modalTitle}>Upload Content</Text>
               <TouchableOpacity
                 style={styles.closeButton}
-                onPress={() => setShowUploadModal(false)}
+                onPress={closeModal}
                 activeOpacity={0.7}
               >
                 <X size={24} color={colors.textSecondary} />
@@ -1215,7 +1220,7 @@ function createStyles(colors: any) {
       marginVertical: 4,
       marginHorizontal: 8,
     },
-    // Modal styles - Bottom slide animation
+    // Modal styles - Bottom slide animation with slide out
     modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.6)',

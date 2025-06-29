@@ -491,13 +491,6 @@ export default function LibraryScreen() {
                 )}
               </TouchableOpacity>
             ))}
-
-            <View style={styles.configNote}>
-              <AlertCircle size={16} color={colors.warning} />
-              <Text style={styles.configNoteText}>
-                Note: AI processing requires API keys to be configured in your Supabase project settings.
-              </Text>
-            </View>
           </View>
         )}
       </ScrollView>
@@ -915,20 +908,6 @@ function createStyles(colors: any) {
       color: colors.error,
       fontStyle: 'italic',
       opacity: 0.8,
-    },
-    configNote: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      backgroundColor: colors.warning + '15',
-      padding: 10, // Reduced from 12
-      borderRadius: 8,
-      gap: 8,
-    },
-    configNoteText: {
-      flex: 1,
-      fontSize: 12,
-      color: colors.warning,
-      lineHeight: 16,
     },
     // Dropdown menu styles
     dropdownOverlay: {

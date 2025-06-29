@@ -1,19 +1,7 @@
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
-import { 
-  ArrowLeft, 
-  Moon, 
-  Sun, 
-  Bell, 
-  Shield, 
-  HelpCircle, 
-  FileText, 
-  Smartphone,
-  Globe,
-  Download,
-  Trash2
-} from 'lucide-react-native';
+import { ArrowLeft, Moon, Sun, Bell, Shield, CircleHelp as HelpCircle, FileText, Smartphone, Globe, Download, Trash2 } from 'lucide-react-native';
 
 export default function SettingsScreen() {
   const router = useRouter();

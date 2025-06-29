@@ -418,7 +418,6 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
           temperature: 0.3,
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 2048,
         }
       }),
     });

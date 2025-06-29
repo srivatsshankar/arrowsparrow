@@ -330,12 +330,56 @@ function cleanJsonString(jsonString: string): string {
     .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas before } or ]
     .replace(/,(\s*$)/gm, ''); // Remove trailing commas at end of lines
   
-  // Clean up extra whitespace and newlines
-  cleaned = cleaned
-    .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-    .trim();
+  // Clean up whitespace more carefully - preserve whitespace within strings
+  cleaned = cleanWhitespacePreservingStrings(cleaned);
   
-  return cleaned;
+  return cleaned.trim();
+}
+
+function cleanWhitespacePreservingStrings(text: string): string {
+  let result = '';
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const prevChar = i > 0 ? text[i - 1] : '';
+    
+    if (escapeNext) {
+      result += char;
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\' && inString) {
+      result += char;
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"' && !escapeNext) {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+    
+    if (inString) {
+      // Inside string - preserve all whitespace
+      result += char;
+    } else {
+      // Outside string - normalize whitespace
+      if (/\s/.test(char)) {
+        // Only add space if previous char wasn't whitespace
+        if (result.length > 0 && !/\s$/.test(result)) {
+          result += ' ';
+        }
+      } else {
+        result += char;
+      }
+    }
+  }
+  
+  return result;
 }
 
 function extractJsonFromText(text: string): string | null {
@@ -343,6 +387,10 @@ function extractJsonFromText(text: string): string | null {
   const markdownJsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/i);
   if (markdownJsonMatch) {
     const extracted = markdownJsonMatch[1].trim();
+    // Test if it's valid JSON before cleaning
+    if (isValidJson(extracted)) {
+      return extracted;
+    }
     return cleanJsonString(extracted);
   }
 
@@ -352,6 +400,9 @@ function extractJsonFromText(text: string): string | null {
     const content = codeBlockMatch[1].trim();
     // Check if it looks like JSON (starts with { and ends with })
     if (content.startsWith('{') && content.endsWith('}')) {
+      if (isValidJson(content)) {
+        return content;
+      }
       return cleanJsonString(content);
     }
   }
@@ -362,16 +413,32 @@ function extractJsonFromText(text: string): string | null {
   
   if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
     const extracted = text.substring(firstBrace, lastBrace + 1);
+    if (isValidJson(extracted)) {
+      return extracted;
+    }
     return cleanJsonString(extracted);
   }
 
   // Method 4: Try the original regex approach as fallback
   const regexMatch = text.match(/\{[\s\S]*\}/);
   if (regexMatch) {
-    return cleanJsonString(regexMatch[0]);
+    const candidate = regexMatch[0];
+    if (isValidJson(candidate)) {
+      return candidate;
+    }
+    return cleanJsonString(candidate);
   }
 
   return null;
+}
+
+function isValidJson(str: string): boolean {
+  try {
+    JSON.parse(str);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function processSummaryWithGemini(text: string, uploadId: string, supabase: any): Promise<void> {
@@ -495,20 +562,15 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
       console.error('Failed to parse extracted JSON:', parseError);
       console.error('JSON string that failed to parse:', jsonString);
       
-      // Try one more aggressive cleaning attempt
+      // Try one more careful cleaning attempt
       try {
-        const aggressivelyCleaned = jsonString
-          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
-          .replace(/\n/g, ' ') // Replace newlines with spaces
-          .replace(/\r/g, '') // Remove carriage returns
-          .replace(/\t/g, ' ') // Replace tabs with spaces
-          .replace(/\\/g, '\\\\') // Escape backslashes
-          .replace(/"/g, '\\"') // Escape quotes within strings
-          .replace(/\\"/g, '"') // Fix over-escaped quotes
-          .replace(/\\\\/g, '\\'); // Fix over-escaped backslashes
+        const carefullyCleaned = jsonString
+          .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '') // Remove only problematic control characters, keep \n and \t
+          .replace(/\r\n/g, '\n') // Normalize line endings
+          .replace(/\r/g, '\n'); // Convert remaining \r to \n
         
-        console.log('Attempting aggressive cleaning:', aggressivelyCleaned);
-        analysis = JSON.parse(aggressivelyCleaned);
+        console.log('Attempting careful cleaning:', carefullyCleaned);
+        analysis = JSON.parse(carefullyCleaned);
       } catch (secondParseError) {
         console.error('Second parse attempt also failed:', secondParseError);
         throw new Error('Failed to parse AI response - invalid JSON format after cleaning attempts');

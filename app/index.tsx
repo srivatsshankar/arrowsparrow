@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { Audio } from 'expo-av';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
@@ -73,6 +74,14 @@ export default function LibraryScreen() {
   useEffect(() => {
     fetchUploads();
   }, [user]);
+
+  // Refresh data when screen comes into focus (e.g., after returning from detail screen)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('Library screen focused - refreshing data');
+      fetchUploads();
+    }, [user])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);

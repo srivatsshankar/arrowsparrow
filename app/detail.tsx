@@ -144,34 +144,31 @@ export default function DetailScreen() {
 
       console.log('Upload record successfully deleted from database');
       
-      // Step 3: Show success and navigate back
+      // Step 3: Close modal and navigate back with refresh trigger
       setShowDeleteModal(false);
+      setDeleting(false);
       
-      Alert.alert(
-        'Success', 
-        `Item "${upload.file_name}" has been deleted successfully.${storageDeleted ? '' : ' (Note: File may still exist in storage)'}`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              console.log('Navigating back after successful deletion');
-              router.back();
-            }
-          }
-        ]
-      );
+      // Navigate back immediately
+      router.back();
+      
+      // Show success message after navigation
+      setTimeout(() => {
+        Alert.alert(
+          'Success', 
+          `"${upload.file_name}" has been deleted successfully.${storageDeleted ? '' : ' (Note: File may still exist in storage)'}`
+        );
+      }, 100);
       
     } catch (error) {
       console.error('Deletion process failed:', error);
       setShowDeleteModal(false);
+      setDeleting(false);
       
       Alert.alert(
         'Delete Failed', 
         `Failed to delete the item: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
         [{ text: 'OK' }]
       );
-    } finally {
-      setDeleting(false);
     }
   };
 

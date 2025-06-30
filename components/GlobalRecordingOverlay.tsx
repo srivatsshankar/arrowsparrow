@@ -75,6 +75,9 @@ export default function GlobalRecordingOverlay() {
 
   const styles = createStyles(colors);
 
+  // Debug logging
+  console.log('🖥️ GlobalRecordingOverlay render - showRecordingScreen:', showRecordingScreen);
+
   const formatDuration = (milliseconds: number) => {
     const hours = Math.floor(milliseconds / (1000 * 60 * 60));
     const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));

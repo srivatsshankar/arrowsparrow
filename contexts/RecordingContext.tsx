@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { Audio } from 'expo-av';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
+import { convertAudioToWav } from '@/lib/audioUtils';
 
 interface RecordingContextType {
   // Recording state
@@ -14,8 +15,13 @@ interface RecordingContextType {
   isPaused: boolean;
   audioLevels: number[];
   
+  // Upload/Processing state
+  isUploading: boolean;
+  uploadProgress: number;
+  lastUploadedFileName: string | null;
+  
   // Recording controls
-  startRecording: () => Promise<void>;
+  startRecording: (folderId?: string | null) => Promise<void>;
   stopRecording: () => Promise<void>;
   pauseRecording: () => Promise<void>;
   cancelRecording: () => Promise<void>;
@@ -23,7 +29,7 @@ interface RecordingContextType {
   returnToRecording: () => void;
   
   // File upload handler
-  handleFileUpload: (uri: string, fileType: 'audio' | 'document', fileName: string) => Promise<void>;
+  handleFileUpload: (uri: string, fileType: 'audio' | 'document', fileName: string, knownDuration?: number, folderId?: string | null) => Promise<void>;
 }
 
 const RecordingContext = createContext<RecordingContextType | undefined>(undefined);
@@ -37,6 +43,12 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [audioLevels, setAudioLevels] = useState<number[]>([]);
+  
+  // Upload/Processing state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [lastUploadedFileName, setLastUploadedFileName] = useState<string | null>(null);
+  const [currentRecordingFolderId, setCurrentRecordingFolderId] = useState<string | null>(null);
   
   const recordingTimerRef = useRef<number | null>(null);
   const audioLevelIntervalRef = useRef<number | null>(null);
@@ -54,8 +66,11 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const startRecording = async () => {
+  const startRecording = async (folderId?: string | null) => {
     try {
+      // Store the folder ID for this recording session
+      setCurrentRecordingFolderId(folderId || null);
+      
       // Request microphone permission for all platforms
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status !== 'granted') {
@@ -76,19 +91,19 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
           ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
           android: {
             ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
-            sampleRate: 44100,
-            numberOfChannels: 1,
-            bitRate: 128000,
+            sampleRate: 16000, // Use 16kHz for consistency with target conversion
+            numberOfChannels: 1, // Mono recording
+            bitRate: 64000, // Lower bit rate for smaller files
           },
           ios: {
             ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
-            sampleRate: 44100,
-            numberOfChannels: 1,
-            bitRate: 128000,
+            sampleRate: 16000, // Use 16kHz for consistency with target conversion
+            numberOfChannels: 1, // Mono recording
+            bitRate: 64000, // Lower bit rate for smaller files
           },
           web: {
             mimeType: 'audio/webm',
-            bitsPerSecond: 128000,
+            bitsPerSecond: 64000, // Lower bit rate for smaller files
           },
         }
       );
@@ -150,12 +165,43 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
       setShowRecordingScreen(false);
       setRecordingInBackground(false);
       
+      // Try to get the actual recording duration before stopping
+      let actualRecordingDuration: number | null = null;
+      try {
+        const recordingStatus = await recording.getStatusAsync();
+        if (recordingStatus.isRecording !== undefined && (recordingStatus as any).durationMillis) {
+          actualRecordingDuration = (recordingStatus as any).durationMillis / 1000;
+          console.log(`📊 Actual recording duration from status: ${actualRecordingDuration.toFixed(2)}s`);
+        }
+      } catch (statusError) {
+        console.warn('Could not get recording status before stopping:', statusError);
+      }
+      
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       
       if (uri) {
-        const fileName = `recording_${Date.now()}.m4a`;
-        await handleFileUpload(uri, 'audio', fileName);
+        const fileName = `recording_${Date.now()}.wav`; // Changed to .wav extension
+        
+        // Use the most accurate duration available
+        const trackedDurationSeconds = recordingDuration / 1000;
+        const durationToUse = actualRecordingDuration || trackedDurationSeconds;
+        
+        console.log(`🎙️ Recording completed:
+          - Tracked Duration: ${trackedDurationSeconds.toFixed(2)}s
+          - Actual Duration: ${actualRecordingDuration?.toFixed(2) || 'N/A'}s  
+          - Using: ${durationToUse.toFixed(2)}s`);
+        
+        // Use the duration if it's reasonable (> 0.1 seconds), otherwise let the system calculate it
+        const finalDuration = durationToUse > 0.1 ? durationToUse : undefined;
+        if (finalDuration) {
+          console.log(`✅ Using duration: ${finalDuration.toFixed(2)}s`);
+        } else {
+          console.log(`⚠️ Duration too short (${durationToUse.toFixed(2)}s), will calculate from file`);
+        }
+        
+        // Pass the known duration to avoid re-calculation
+        await handleFileUpload(uri, 'audio', fileName, finalDuration, currentRecordingFolderId);
       }
       
       // Reset recording state
@@ -299,48 +345,188 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
     return filePath;
   };
 
-  const handleFileUpload = async (uri: string, fileType: 'audio' | 'document', fileName: string) => {
+  // Function to calculate audio duration from file URI
+  const getAudioDuration = async (uri: string): Promise<number | null> => {
+    try {
+      console.log('🔍 Calculating audio duration for:', uri);
+      
+      // For local recordings, add a small delay to ensure file is fully written
+      if (uri.includes('ExponentExperienceData') || uri.includes('file://')) {
+        console.log('📱 Local recording detected, waiting for file to stabilize...');
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // Create a temporary sound object to get duration
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: false }, // Don't play, just load metadata
+        null // No status callback needed
+      );
+
+      // Wait for metadata to load with more attempts for local recordings
+      let attempts = 0;
+      const maxAttempts = uri.includes('file://') ? 30 : 20; // More attempts for local files
+      
+      while (attempts < maxAttempts) {
+        try {
+          const status = await sound.getStatusAsync();
+          
+          if (status.isLoaded && (status as any).durationMillis) {
+            const durationSeconds = (status as any).durationMillis / 1000;
+            
+            if (isFinite(durationSeconds) && !isNaN(durationSeconds) && durationSeconds > 0) {
+              console.log(`✅ Audio duration calculated: ${durationSeconds.toFixed(2)}s after ${attempts + 1} attempts`);
+              
+              // Cleanup the temporary sound
+              await sound.unloadAsync();
+              return durationSeconds;
+            }
+          }
+          
+          attempts++;
+          if (attempts < maxAttempts) {
+            // Progressive delay, longer for local files
+            const baseDelay = uri.includes('file://') ? 200 : 100;
+            const delay = Math.min(baseDelay + (attempts * 150), 1500);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        } catch (statusError) {
+          console.warn(`Attempt ${attempts + 1} failed:`, statusError);
+          attempts++;
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+        }
+      }
+      
+      console.warn('⚠️ Could not determine audio duration after maximum attempts');
+      
+      // Cleanup the temporary sound
+      try {
+        await sound.unloadAsync();
+      } catch (cleanupError) {
+        console.error('Error cleaning up temporary sound:', cleanupError);
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error calculating audio duration:', error);
+      return null;
+    }
+  };
+
+  const handleFileUpload = async (uri: string, fileType: 'audio' | 'document', fileName: string, knownDuration?: number, folderId?: string | null) => {
     if (!user) return;
 
-    // First, create a database entry with "uploaded" status
-    const { data: initialDbData, error: initialDbError } = await supabase
-      .from('uploads')
-      .insert({
-        user_id: user.id,
-        file_name: fileName,
-        file_type: fileType,
-        file_url: '', // Will be updated after upload
-        file_size: 0, // Will be updated after we get file info
-        status: 'uploaded', // Initial status after successful upload
-      })
-      .select()
-      .single();
-
-    if (initialDbError) {
-      console.error('Initial database insert error:', initialDbError);
-      Alert.alert('Error', 'Failed to start upload');
-      return;
-    }
+    let processedUri = uri;
+    let processedFileName = fileName;
+    let fileBlob: Blob;
 
     try {
-      // Get file info
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const fileSize = blob.size;
+      // Set uploading state
+      setIsUploading(true);
+      setUploadProgress(0);
+      setLastUploadedFileName(fileName); // Start with original filename
+
+      let audioDuration: number | null = null;
+
+      if (fileType === 'audio') {
+        setUploadProgress(5); // Progress: Starting audio conversion
+        
+        // Only convert audio to WAV on web platform (where Web Audio API is available)
+        if (Platform.OS === 'web') {
+          try {
+            console.log('🎵 Converting audio to WAV format (16kHz max)...');
+            const { blob: wavBlob, fileName: wavFileName } = await convertAudioToWav(uri);
+            
+            // Create a temporary URL for the converted WAV blob
+            const wavUrl = URL.createObjectURL(wavBlob);
+            processedUri = wavUrl;
+            processedFileName = wavFileName;
+            fileBlob = wavBlob;
+            
+            // Update the displayed filename to show the WAV file
+            setLastUploadedFileName(wavFileName);
+            
+            console.log(`✅ Audio converted to WAV: ${wavFileName}`);
+            setUploadProgress(15); // Progress: Audio conversion complete
+          } catch (conversionError) {
+            console.warn('⚠️ Audio conversion failed, uploading original file:', conversionError);
+            // Fall back to original file if conversion fails
+            const response = await fetch(uri);
+            fileBlob = await response.blob();
+          }
+        } else {
+          // On mobile platforms, use original file
+          console.log('📱 Mobile platform detected, uploading original audio file');
+          const response = await fetch(uri);
+          fileBlob = await response.blob();
+        }
+
+        setUploadProgress(20); // Progress: Getting duration
+        
+        if (knownDuration !== undefined && knownDuration > 0) {
+          audioDuration = knownDuration;
+          console.log(`🎵 Using known audio duration: ${audioDuration.toFixed(2)} seconds`);
+        } else {
+          console.log('📊 Calculating duration for audio file...');
+          audioDuration = await getAudioDuration(processedUri);
+          if (audioDuration) {
+            console.log(`🎵 Calculated audio duration: ${audioDuration.toFixed(2)} seconds`);
+          }
+        }
+      } else {
+        // For documents, just get the blob
+        setUploadProgress(10); // Progress: Getting file
+        const response = await fetch(uri);
+        fileBlob = await response.blob();
+      }
+
+      setUploadProgress(30); // Progress: Creating database entry
+
+      // First, create a database entry with "uploaded" status
+      const { data: initialDbData, error: initialDbError } = await supabase
+        .from('uploads')
+        .insert({
+          user_id: user.id,
+          file_name: processedFileName,
+          file_type: fileType,
+          file_url: '', // Will be updated after upload
+          file_size: 0, // Will be updated after we get file info
+          duration: audioDuration, // Add duration for audio files
+          status: 'uploaded', // Initial status after successful upload
+        })
+        .select()
+        .single();
+
+      if (initialDbError) {
+        console.error('Initial database insert error:', initialDbError);
+        Alert.alert('Error', 'Failed to start upload');
+        return;
+      }
+
+      setUploadProgress(40); // Progress: Getting file info
+
+      // Get file size from the blob
+      const fileSize = fileBlob.size;
 
       // Generate unique file path with versioning
-      const uniqueFilePath = await generateUniqueFilePath(user.id, fileName);
+      const uniqueFilePath = await generateUniqueFilePath(user.id, processedFileName);
       console.log('Generated unique file path:', uniqueFilePath);
+
+      setUploadProgress(60); // Progress: Starting upload
 
       // Upload to Supabase Storage with unique path
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('uploads')
-        .upload(uniqueFilePath, blob);
+        .upload(uniqueFilePath, fileBlob);
 
       if (uploadError) {
         console.error('Storage upload error:', uploadError);
         throw uploadError;
       }
+
+      setUploadProgress(75); // Progress: Upload complete, getting URL
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
@@ -348,8 +534,10 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
         .getPublicUrl(uniqueFilePath);
 
       // Extract the final file name from the unique path for display
-      const finalFileName = uniqueFilePath.split('/').pop() || fileName;
+      const finalFileName = uniqueFilePath.split('/').pop() || processedFileName;
       const displayFileName = finalFileName.replace(/^\d+_/, ''); // Remove timestamp prefix for display
+
+      setUploadProgress(85); // Progress: Updating database
 
       // Update database entry with file details and "uploaded" status
       const { data: dbData, error: dbError } = await supabase
@@ -368,6 +556,8 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
         console.error('Database update error:', dbError);
         throw dbError;
       }
+
+      setUploadProgress(90); // Progress: Starting processing
       
       // Trigger processing via edge function
       try {
@@ -412,20 +602,72 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
           })
           .eq('id', initialDbData.id);
       }
+
+      setUploadProgress(100); // Progress: Complete
+      
+      // Add to folder if specified
+      if (folderId && initialDbData?.id) {
+        try {
+          console.log(`Adding upload ${initialDbData.id} to folder ${folderId}`);
+          const { error: folderError } = await supabase
+            .from('upload_folders')
+            .insert({
+              upload_id: initialDbData.id,
+              folder_id: folderId,
+            });
+
+          if (folderError) {
+            console.error('Error adding upload to folder:', folderError);
+            // Don't fail the entire upload if folder assignment fails
+          } else {
+            console.log('Successfully added upload to folder');
+          }
+        } catch (folderAssignError) {
+          console.error('Error assigning to folder:', folderAssignError);
+          // Don't fail the entire upload if folder assignment fails
+        }
+      }
+      
+      // Clean up temporary URL if we created one
+      if (Platform.OS === 'web' && fileType === 'audio' && processedUri !== uri && processedUri.startsWith('blob:')) {
+        URL.revokeObjectURL(processedUri);
+      }
+      
+      // Keep the upload indicator visible for a moment to show completion
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+        setLastUploadedFileName(null);
+      }, 2000);
       
     } catch (error) {
       console.error('Upload error:', error);
       
-      // Update the database entry to show error
-      await supabase
-        .from('uploads')
-        .update({ 
-          status: 'error',
-          error_message: 'Upload failed'
-        })
-        .eq('id', initialDbData.id);
+      // Clean up temporary URL if we created one
+      if (Platform.OS === 'web' && fileType === 'audio' && processedUri && processedUri !== uri && processedUri.startsWith('blob:')) {
+        URL.revokeObjectURL(processedUri);
+      }
+      
+      // Update the database entry to show error if we have the ID
+      try {
+        await supabase
+          .from('uploads')
+          .update({ 
+            status: 'error',
+            error_message: 'Upload failed'
+          })
+          .eq('file_name', processedFileName || fileName)
+          .eq('user_id', user.id);
+      } catch (dbError) {
+        console.error('Failed to update error status:', dbError);
+      }
       
       Alert.alert('Error', 'Failed to upload file');
+      
+      // Reset upload state
+      setIsUploading(false);
+      setUploadProgress(0);
+      setLastUploadedFileName(null);
     }
   };
 
@@ -437,6 +679,9 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
     recordingDuration,
     isPaused,
     audioLevels,
+    isUploading,
+    uploadProgress,
+    lastUploadedFileName,
     startRecording,
     stopRecording,
     pauseRecording,

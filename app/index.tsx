@@ -12,15 +12,17 @@ import {
   Image,
   Animated,
   Dimensions,
+  TextInput,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRecording } from '@/contexts/RecordingContext';
+import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings, Headphones, Pause, Play, ArrowLeft } from 'lucide-react-native';
+import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings, Headphones, Pause, Play, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Folder, Circle, Trash2 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import BoltLogo from '@/components/BoltLogo';
@@ -47,7 +49,17 @@ export default function LibraryScreen() {
     isPaused,
     returnToRecording,
     pauseRecording,
+    isUploading,
+    uploadProgress,
+    lastUploadedFileName,
   } = useRecording();
+  const {
+    currentUpload: globalCurrentUpload,
+    isPlaying: globalIsPlaying,
+    isLoading: globalAudioLoading,
+    playAudio,
+    togglePlayback: globalTogglePlayback,
+  } = useAudioPlayer();
   const router = useRouter();
   const [uploads, setUploads] = useState<UploadWithData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +67,18 @@ export default function LibraryScreen() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showDropdownMenu, setShowDropdownMenu] = useState(false);
   const [pollingInterval, setPollingInterval] = useState<number | null>(null);
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [folders, setFolders] = useState<Array<{id: string; name: string; color: string}>>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderDescription, setNewFolderDescription] = useState('');
+  const [newFolderColor, setNewFolderColor] = useState('#3B82F6');
+  
+  // Multi-select state
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedUploads, setSelectedUploads] = useState<Set<string>>(new Set());
   
   // Animation values for modal
   const [modalOpacity] = useState(new Animated.Value(0));
@@ -69,7 +93,27 @@ export default function LibraryScreen() {
     new Animated.Value(0.6),
   ]).current;
 
+  // Processing dots animation values
+  const processingAnimations = useRef([
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+  ]).current;
+
   const styles = createStyles(colors);
+
+  const folderColors = [
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Yellow
+    '#EF4444', // Red
+    '#8B5CF6', // Purple
+    '#06B6D4', // Cyan
+    '#F97316', // Orange
+    '#84CC16', // Lime
+    '#EC4899', // Pink
+    '#6B7280', // Gray
+  ];
 
   // Audio Wave Animation Component
   const AudioWaveVisualizer = ({ isActive, isPaused }: { isActive: boolean; isPaused: boolean }) => {
@@ -130,6 +174,71 @@ export default function LibraryScreen() {
     );
   };
 
+  // Animated Processing Dots Component
+  const AnimatedProcessingDots = () => {
+    useEffect(() => {
+      // Create staggered bouncing animation for processing dots
+      const animations = processingAnimations.map((dot, index) => 
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(dot, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(dot, {
+              toValue: 0.3,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ])
+        )
+      );
+      
+      // Start animations with staggered delays
+      animations.forEach((animation, index) => {
+        setTimeout(() => animation.start(), index * 200);
+      });
+
+      return () => {
+        animations.forEach(animation => animation.stop());
+      };
+    }, []);
+
+    return (
+      <View style={styles.processingDots}>
+        {processingAnimations.map((dot, index) => (
+          <Animated.View
+            key={index}
+            style={[
+              styles.processingDot, 
+              { 
+                backgroundColor: colors.warning,
+                opacity: dot,
+              }
+            ]}
+          />
+        ))}
+      </View>
+    );
+  };
+
+  // Helper function to format audio duration in seconds
+  const formatAudioDuration = (durationSeconds: number | null | undefined): string => {
+    if (!durationSeconds || !isFinite(durationSeconds) || isNaN(durationSeconds)) {
+      return '';
+    }
+    
+    const hours = Math.floor(durationSeconds / 3600);
+    const minutes = Math.floor((durationSeconds % 3600) / 60);
+    const seconds = Math.floor(durationSeconds % 60);
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   // Helper function to format recording duration
   const formatDuration = (milliseconds: number) => {
     const hours = Math.floor(milliseconds / (1000 * 60 * 60));
@@ -181,8 +290,122 @@ export default function LibraryScreen() {
     ]).start(() => {
       // Only set showUploadModal to false after animation completes
       setShowUploadModal(false);
+      setSelectedFolderId(null);
+      setShowFolderDropdown(false);
     });
   };
+
+  // Function to update missing audio durations for existing uploads
+  const updateMissingDurations = async () => {
+    if (!user) return;
+    
+    try {
+      console.log('🔄 Checking for audio files missing duration information...');
+      
+      // Get audio uploads that don't have duration
+      const { data: audioUploads, error } = await supabase
+        .from('uploads')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('file_type', 'audio')
+        .is('duration', null);
+
+      if (error) {
+        console.error('Error fetching audio uploads:', error);
+        return;
+      }
+
+      if (!audioUploads || audioUploads.length === 0) {
+        console.log('✅ All audio files already have duration information');
+        return;
+      }
+
+      console.log(`📊 Found ${audioUploads.length} audio files missing duration. Calculating...`);
+
+      // Calculate duration for each audio file
+      for (const upload of audioUploads) {
+        try {
+          console.log(`🎵 Calculating duration for: ${upload.file_name}`);
+          
+          // Create a temporary sound object to get duration
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: upload.file_url },
+            { shouldPlay: false },
+            null
+          );
+
+          // Wait for metadata to load
+          let attempts = 0;
+          const maxAttempts = 15;
+          let duration: number | null = null;
+          
+          while (attempts < maxAttempts && !duration) {
+            try {
+              const status = await sound.getStatusAsync();
+              
+              if (status.isLoaded && (status as any).durationMillis) {
+                const durationSeconds = (status as any).durationMillis / 1000;
+                
+                if (isFinite(durationSeconds) && !isNaN(durationSeconds) && durationSeconds > 0) {
+                  duration = durationSeconds;
+                  break;
+                }
+              }
+              
+              attempts++;
+              if (attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+              }
+            } catch (statusError) {
+              attempts++;
+              if (attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 300));
+              }
+            }
+          }
+
+          // Cleanup
+          await sound.unloadAsync();
+
+          if (duration) {
+            // Update the database with the calculated duration
+            const { error: updateError } = await supabase
+              .from('uploads')
+              .update({ duration })
+              .eq('id', upload.id);
+
+            if (updateError) {
+              console.error(`Error updating duration for ${upload.file_name}:`, updateError);
+            } else {
+              console.log(`✅ Updated duration for ${upload.file_name}: ${duration.toFixed(2)}s`);
+            }
+          } else {
+            console.warn(`⚠️ Could not calculate duration for ${upload.file_name}`);
+          }
+
+        } catch (error) {
+          console.error(`Error processing ${upload.file_name}:`, error);
+        }
+      }
+
+      // Refresh the uploads list to show updated durations
+      console.log('🔄 Refreshing uploads list...');
+      await fetchUploads();
+      
+    } catch (error) {
+      console.error('Error updating missing durations:', error);
+    }
+  };
+
+  // Run updateMissingDurations when the component mounts (only once)
+  useEffect(() => {
+    if (user) {
+      // Delay to allow other initialization to complete
+      setTimeout(() => {
+        updateMissingDurations();
+      }, 2000);
+    }
+  }, [user]);
 
   const fetchUploads = async () => {
     if (!user) return;
@@ -194,11 +417,10 @@ export default function LibraryScreen() {
           *,
           transcriptions (transcription_text),
           document_texts (extracted_text),
-          summaries (summary_text),
-          key_points (point_text, importance_level)
+          summaries (summary_text)
         `)
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: sortOrder === 'oldest' });
 
       if (error) throw error;
 
@@ -211,8 +433,137 @@ export default function LibraryScreen() {
     }
   };
 
+  const fetchFolders = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('folders')
+        .select('id, name, color')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setFolders(data || []);
+    } catch (error) {
+      console.error('Error fetching folders:', error);
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!user || !newFolderName.trim()) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('folders')
+        .insert({
+          user_id: user.id,
+          name: newFolderName.trim(),
+          description: newFolderDescription.trim() || null,
+          color: newFolderColor,
+        })
+        .select('id, name, color')
+        .single();
+
+      if (error) throw error;
+
+      // Add the new folder to the list and select it
+      if (data) {
+        setFolders(prev => [data, ...prev]);
+        setSelectedFolderId(data.id);
+      }
+
+      // Reset form and close modal
+      setNewFolderName('');
+      setNewFolderDescription('');
+      setNewFolderColor('#3B82F6');
+      setShowCreateFolderModal(false);
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      Alert.alert('Error', 'Failed to create folder');
+    }
+  };
+
+  // Multi-select functions
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    setSelectedUploads(new Set());
+  };
+
+  const toggleUploadSelection = (uploadId: string) => {
+    const newSelection = new Set(selectedUploads);
+    if (newSelection.has(uploadId)) {
+      newSelection.delete(uploadId);
+    } else {
+      newSelection.add(uploadId);
+    }
+    setSelectedUploads(newSelection);
+  };
+
+  const selectAllUploads = () => {
+    if (selectedUploads.size === uploads.length) {
+      setSelectedUploads(new Set());
+    } else {
+      setSelectedUploads(new Set(uploads.map(upload => upload.id)));
+    }
+  };
+
+  const deleteSelectedUploads = async () => {
+    if (selectedUploads.size === 0) return;
+
+    Alert.alert(
+      'Delete Uploads',
+      `Are you sure you want to delete ${selectedUploads.size} upload${selectedUploads.size > 1 ? 's' : ''}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Delete files from storage first
+              const uploadIds = Array.from(selectedUploads);
+              const uploadsToDelete = uploads.filter(upload => uploadIds.includes(upload.id));
+              
+              for (const upload of uploadsToDelete) {
+                // Extract file path from URL
+                const url = new URL(upload.file_url);
+                const filePath = url.pathname.split('/').pop();
+                if (filePath) {
+                  await supabase.storage
+                    .from('uploads')
+                    .remove([`${user?.id}/${filePath}`]);
+                }
+              }
+
+              // Delete database records
+              const { error } = await supabase
+                .from('uploads')
+                .delete()
+                .in('id', uploadIds);
+
+              if (error) throw error;
+
+              // Update local state
+              setUploads(prev => prev.filter(upload => !selectedUploads.has(upload.id)));
+              setSelectedUploads(new Set());
+              setIsSelectionMode(false);
+
+              Alert.alert('Success', `${uploadIds.length} upload${uploadIds.length > 1 ? 's' : ''} deleted successfully`);
+            } catch (error) {
+              console.error('Error deleting uploads:', error);
+              Alert.alert('Error', 'Failed to delete some uploads');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   useEffect(() => {
     fetchUploads();
+    fetchFolders();
     
     // Set up real-time subscription for upload status changes
     if (user) {
@@ -238,7 +589,7 @@ export default function LibraryScreen() {
         supabase.removeChannel(channel);
       };
     }
-  }, [user]);
+  }, [user, sortOrder]); // Added sortOrder as dependency
 
   // Set up polling for processing uploads
   useEffect(() => {
@@ -280,6 +631,10 @@ export default function LibraryScreen() {
     fetchUploads();
   };
 
+  const toggleSortOrder = () => {
+    setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest');
+  };
+
   const handleMenuItemPress = (action: string) => {
     setShowDropdownMenu(false);
     
@@ -313,7 +668,8 @@ export default function LibraryScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const file = result.assets[0];
-        await handleFileUpload(file.uri, 'document', file.name);
+        closeModal(); // Close modal before starting upload
+        await handleFileUpload(file.uri, 'document', file.name, undefined, selectedFolderId);
       }
     } catch (error) {
       console.error('Error picking document:', error);
@@ -339,7 +695,8 @@ export default function LibraryScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const file = result.assets[0];
-        await handleFileUpload(file.uri, 'audio', file.name);
+        closeModal(); // Close modal before starting upload
+        await handleFileUpload(file.uri, 'audio', file.name, undefined, selectedFolderId);
       }
     } catch (error) {
       console.error('Error picking audio:', error);
@@ -439,19 +796,48 @@ export default function LibraryScreen() {
 
   const renderUploadCard = (upload: UploadWithData) => {
     const isClickable = true; // All files are clickable since 'uploading' status not yet supported
+    const isSelected = selectedUploads.has(upload.id);
     
     return (
       <TouchableOpacity 
         key={upload.id} 
         style={[
           styles.uploadCard,
-          !isClickable && styles.disabledCard
+          !isClickable && styles.disabledCard,
+          isSelected && styles.selectedCard
         ]} 
         activeOpacity={isClickable ? 0.7 : 1}
-        onPress={isClickable ? () => handleUploadPress(upload) : undefined}
-        disabled={!isClickable}
+        onPress={() => {
+          if (isSelectionMode) {
+            toggleUploadSelection(upload.id);
+          } else if (isClickable) {
+            handleUploadPress(upload);
+          }
+        }}
+        onLongPress={() => {
+          if (!isSelectionMode) {
+            setIsSelectionMode(true);
+            toggleUploadSelection(upload.id);
+          }
+        }}
+        disabled={!isClickable && !isSelectionMode}
       >
         <View style={styles.cardHeader}>
+          {/* Selection checkbox - shown when in selection mode */}
+          {isSelectionMode && (
+            <TouchableOpacity
+              style={styles.selectionCheckbox}
+              onPress={() => toggleUploadSelection(upload.id)}
+              activeOpacity={0.7}
+            >
+              {isSelected ? (
+                <CheckCircle size={24} color={colors.primary} />
+              ) : (
+                <Circle size={24} color={colors.textSecondary} />
+              )}
+            </TouchableOpacity>
+          )}
+          
           <View style={styles.fileInfo}>
             <View style={[
               styles.fileIcon,
@@ -468,21 +854,57 @@ export default function LibraryScreen() {
                 styles.fileName,
                 !isClickable && styles.disabledText
               ]} numberOfLines={1}>
-                {upload.file_name}
+                {upload.generated_name || upload.file_name}
               </Text>
               <Text style={styles.fileMetadata}>
-                {formatFileSize(upload.file_size)} • {formatDate(upload.created_at)}
+                {upload.file_type === 'audio' && upload.duration 
+                  ? `${formatAudioDuration(upload.duration)} • ${formatFileSize(upload.file_size)} • ${formatDate(upload.created_at)}`
+                  : `${formatFileSize(upload.file_size)} • ${formatDate(upload.created_at)}`
+                }
               </Text>
             </View>
           </View>
-          <View style={styles.statusContainer}>
-            {getStatusIcon(upload.status)}
-            <Text style={[styles.statusText, { 
-              color: upload.status === 'completed' ? colors.success : 
-                     upload.status === 'error' ? colors.error : colors.warning 
-            }]}>
-              {getStatusText(upload.status)}
-            </Text>
+          
+          <View style={styles.headerActions}>
+            {/* Play button for audio files - hidden in selection mode */}
+            {!isSelectionMode && upload.file_type === 'audio' && upload.status === 'completed' && (
+              <TouchableOpacity
+                style={styles.playButton}
+                onPress={async (e) => {
+                  e.stopPropagation(); // Prevent card navigation
+                  const isCurrentlyPlaying = globalCurrentUpload?.id === upload.id;
+                  
+                  if (isCurrentlyPlaying) {
+                    await globalTogglePlayback();
+                  } else {
+                    await playAudio(upload);
+                  }
+                }}
+                disabled={globalAudioLoading}
+                activeOpacity={0.7}
+              >
+                {globalAudioLoading && globalCurrentUpload?.id === upload.id ? (
+                  <Loader size={16} color="#FFFFFF" />
+                ) : globalCurrentUpload?.id === upload.id && globalIsPlaying ? (
+                  <Pause size={16} color="#FFFFFF" />
+                ) : (
+                  <Play size={16} color="#FFFFFF" />
+                )}
+              </TouchableOpacity>
+            )}
+            
+            {/* Status - hidden in selection mode */}
+            {!isSelectionMode && (
+              <View style={styles.statusContainer}>
+                {getStatusIcon(upload.status)}
+                <Text style={[styles.statusText, { 
+                  color: upload.status === 'completed' ? colors.success : 
+                         upload.status === 'error' ? colors.error : colors.warning 
+                }]}>
+                  {getStatusText(upload.status)}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -492,27 +914,9 @@ export default function LibraryScreen() {
               <View style={styles.contentSection}>
                 <Text style={styles.sectionTitle}>Summary</Text>
                 <Text style={styles.summaryText} numberOfLines={3}>
-                  {upload.summaries[0].summary_text}
+                  {upload.summaries[0].summary_text.substring(0, 200)}
+                  {upload.summaries[0].summary_text.length > 200 ? '...' : ''}
                 </Text>
-              </View>
-            )}
-
-            {upload.key_points && upload.key_points.length > 0 && (
-              <View style={styles.contentSection}>
-                <Text style={styles.sectionTitle}>Key Points</Text>
-                {upload.key_points.slice(0, 3).map((point, index) => (
-                  <View key={index} style={styles.keyPoint}>
-                    <Text style={styles.keyPointBullet}>•</Text>
-                    <Text style={styles.keyPointText} numberOfLines={2}>
-                      {point.point_text}
-                    </Text>
-                  </View>
-                ))}
-                {upload.key_points.length > 3 && (
-                  <Text style={styles.morePoints}>
-                    +{upload.key_points.length - 3} more points
-                  </Text>
-                )}
               </View>
             )}
 
@@ -524,12 +928,8 @@ export default function LibraryScreen() {
 
         {upload.status === 'processing' && (
           <View style={styles.processingIndicator}>
-            <View style={styles.processingDots}>
-              <View style={[styles.processingDot, { backgroundColor: colors.warning }]} />
-              <View style={[styles.processingDot, { backgroundColor: colors.warning }]} />
-              <View style={[styles.processingDot, { backgroundColor: colors.warning }]} />
-            </View>
-            <Text style={styles.processingText}>Processing with AI...</Text>
+            <AnimatedProcessingDots />
+            <Text style={styles.processingText}>Processing...</Text>
           </View>
         )}
 
@@ -582,6 +982,14 @@ export default function LibraryScreen() {
             </TouchableOpacity>
             
             <TouchableOpacity
+              style={styles.folderButton}
+              onPress={() => router.push('./folders')}
+              activeOpacity={0.8}
+            >
+              <Folder size={20} color={colors.text} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity
               style={styles.menuButton}
               onPress={() => setShowDropdownMenu(true)}
               activeOpacity={0.8}
@@ -593,11 +1001,86 @@ export default function LibraryScreen() {
 
         {/* Library Header */}
         <View style={styles.libraryHeader}>
-          <Text style={styles.title}>Your Library</Text>
-          <Text style={styles.subtitle}>
-            {uploads.length} item{uploads.length !== 1 ? 's' : ''} in your collection
-          </Text>
+          <View style={styles.libraryHeaderContent}>
+            <View style={styles.libraryTitleSection}>
+              <Text style={styles.title}>Your Library</Text>
+              {isSelectionMode && selectedUploads.size > 0 ? (
+                <Text style={styles.selectionText}>{selectedUploads.size} selected</Text>
+              ) : (
+                <Text style={styles.subtitle}>
+                  {uploads.length} item{uploads.length !== 1 ? 's' : ''} in your collection
+                </Text>
+              )}
+            </View>
+            
+            <View style={styles.libraryHeaderActions}>
+              {uploads.length > 0 && !isSelectionMode && (
+                <TouchableOpacity
+                  style={styles.sortButton}
+                  onPress={toggleSortOrder}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.sortButtonContent}>
+                    {sortOrder === 'newest' ? (
+                      <ArrowDown size={16} color={colors.textSecondary} />
+                    ) : (
+                      <ArrowUp size={16} color={colors.textSecondary} />
+                    )}
+                    <Text style={styles.sortButtonText}>
+                      {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              
+              {uploads.length > 0 && (
+                <TouchableOpacity
+                  style={[
+                    styles.selectButton,
+                    isSelectionMode && styles.selectButtonActive
+                  ]}
+                  onPress={toggleSelectionMode}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.selectButtonText,
+                    isSelectionMode && styles.selectButtonTextActive
+                  ]}>
+                    {isSelectionMode ? 'Done' : 'Select'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
         </View>
+        
+        {/* Selection Mode Controls */}
+        {isSelectionMode && uploads.length > 0 && (
+          <View style={styles.selectionControls}>
+            <TouchableOpacity
+              style={styles.selectAllButton}
+              onPress={selectAllUploads}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.selectAllText}>
+                {selectedUploads.size === uploads.length ? 'Deselect All' : 'Select All'}
+              </Text>
+            </TouchableOpacity>
+            
+            {selectedUploads.size > 0 && (
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={deleteSelectedUploads}
+                activeOpacity={0.7}
+              >
+                <Trash2 size={16} color="#FFFFFF" />
+                <Text style={styles.deleteButtonText}>
+                  Delete ({selectedUploads.size})
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* Floating Recording Bubble - Positioned above content, only visible on LibraryScreen when recording in background */}
         {(isRecording || recordingInBackground) && !showRecordingScreen && (
@@ -637,6 +1120,48 @@ export default function LibraryScreen() {
           </View>
         )}
 
+        {/* Upload Progress Indicator */}
+        {isUploading && (
+          <View style={styles.uploadIndicatorContent}>
+            <View style={styles.uploadIndicatorInner}>
+              <View style={styles.uploadContent}>
+                <View style={styles.uploadIconContainer}>
+                  <Loader size={20} color={colors.primary} />
+                </View>
+                <View style={styles.uploadTextContainer}>
+                  <Text style={styles.uploadTitle}>
+                    {uploadProgress < 100 ? 'Uploading' : 'Upload Complete'}
+                  </Text>
+                  <Text style={styles.uploadFileName} numberOfLines={1}>
+                    {lastUploadedFileName}
+                  </Text>
+                  {uploadProgress >= 5 && uploadProgress <= 15 && (
+                    <Text style={styles.conversionText}>
+                      Converting to WAV (16kHz)...
+                    </Text>
+                  )}
+                  <View style={styles.progressContainer}>
+                    <View style={styles.progressBarBackground}>
+                      <View 
+                        style={[
+                          styles.progressBar, 
+                          { width: `${uploadProgress}%` }
+                        ]} 
+                      />
+                    </View>
+                    <Text style={styles.progressText}>{uploadProgress}%</Text>
+                  </View>
+                  {uploadProgress === 100 && (
+                    <Text style={styles.processingText}>
+                      Processing...
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
         {uploads.length === 0 ? (
           <View style={styles.emptyState}>
             <FileText size={64} color={colors.textSecondary} />
@@ -670,42 +1195,45 @@ export default function LibraryScreen() {
         animationType="fade"
         onRequestClose={() => setShowDropdownMenu(false)}
       >
-        <TouchableOpacity 
-          style={styles.dropdownOverlay}
-          activeOpacity={1}
-          onPress={() => setShowDropdownMenu(false)}
-        >
-          <View style={styles.dropdownMenu}>
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => handleMenuItemPress('profile')}
-              activeOpacity={0.7}
-            >
-              <User size={20} color={colors.text} />
-              <Text style={styles.dropdownItemText}>Profile</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => handleMenuItemPress('settings')}
-              activeOpacity={0.7}
-            >
-              <Settings size={20} color={colors.text} />
-              <Text style={styles.dropdownItemText}>Settings</Text>
-            </TouchableOpacity>
-            
-            <View style={styles.dropdownDivider} />
-            
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => handleMenuItemPress('signout')}
-              activeOpacity={0.7}
-            >
-              <LogOut size={20} color={colors.error} />
-              <Text style={[styles.dropdownItemText, { color: colors.error }]}>Sign Out</Text>
-            </TouchableOpacity>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowDropdownMenu(false)}
+          />
+          <View style={styles.dropdownOverlay}>
+            <View style={styles.dropdownMenu}>
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => handleMenuItemPress('profile')}
+                activeOpacity={0.7}
+              >
+                <User size={20} color={colors.text} />
+                <Text style={styles.dropdownItemText}>Profile</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => handleMenuItemPress('settings')}
+                activeOpacity={0.7}
+              >
+                <Settings size={20} color={colors.text} />
+                <Text style={styles.dropdownItemText}>Settings</Text>
+              </TouchableOpacity>
+              
+              <View style={styles.dropdownDivider} />
+              
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => handleMenuItemPress('signout')}
+                activeOpacity={0.7}
+              >
+                <LogOut size={20} color={colors.error} />
+                <Text style={[styles.dropdownItemText, { color: colors.error }]}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
 
       {/* Upload Modal - Bottom Slide with Slide Out Animation */}
@@ -752,6 +1280,75 @@ export default function LibraryScreen() {
               Choose how you'd like to add content to your library
             </Text>
 
+            {/* Folder Selection */}
+            <View style={styles.folderSection}>
+              <Text style={styles.folderSectionTitle}>Add to Folder (Optional)</Text>
+              <TouchableOpacity
+                style={styles.folderSelector}
+                onPress={() => setShowFolderDropdown(!showFolderDropdown)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.folderSelectorContent}>
+                  <Folder size={16} color={selectedFolderId ? colors.primary : colors.textSecondary} />
+                  <Text style={[
+                    styles.folderSelectorText,
+                    { color: selectedFolderId ? colors.text : colors.textSecondary }
+                  ]}>
+                    {selectedFolderId 
+                      ? folders.find(f => f.id === selectedFolderId)?.name || 'Select Folder'
+                      : 'No Folder'
+                    }
+                  </Text>
+                </View>
+                <ArrowDown size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+              
+              {showFolderDropdown && (
+                <View style={styles.folderDropdown}>
+                  <TouchableOpacity
+                    style={[styles.folderOption, !selectedFolderId && styles.selectedFolderOption]}
+                    onPress={() => {
+                      setSelectedFolderId(null);
+                      setShowFolderDropdown(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <X size={16} color={colors.textSecondary} />
+                    <Text style={styles.folderOptionText}>No Folder</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.createFolderOption}
+                    onPress={() => {
+                      setShowFolderDropdown(false);
+                      setShowCreateFolderModal(true);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Plus size={16} color={colors.primary} />
+                    <Text style={[styles.folderOptionText, { color: colors.primary }]}>Create New Folder</Text>
+                  </TouchableOpacity>
+                  
+                  {folders.length > 0 && <View style={styles.folderDivider} />}
+                  
+                  {folders.map(folder => (
+                    <TouchableOpacity
+                      key={folder.id}
+                      style={[styles.folderOption, selectedFolderId === folder.id && styles.selectedFolderOption]}
+                      onPress={() => {
+                        setSelectedFolderId(folder.id);
+                        setShowFolderDropdown(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.folderColorDot, { backgroundColor: folder.color }]} />
+                      <Text style={styles.folderOptionText}>{folder.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
             <View style={styles.uploadOptions}>
               <TouchableOpacity
                 style={[styles.uploadOption, isRecording && styles.recordingOption]}
@@ -760,7 +1357,7 @@ export default function LibraryScreen() {
                     await stopRecording();
                   } else {
                     closeModal();
-                    await startRecording();
+                    await startRecording(selectedFolderId);
                   }
                 }}
                 activeOpacity={0.8}
@@ -778,7 +1375,7 @@ export default function LibraryScreen() {
                   </Text>
                   <Text style={styles.optionDescription}>
                     {isRecording 
-                      ? 'Tap to stop and upload'
+                      ? 'Tap to stop and upload as WAV (16kHz)'
                       : 'Record lectures, meetings, or conversations'
                     }
                   </Text>
@@ -812,13 +1409,109 @@ export default function LibraryScreen() {
                 <View style={styles.optionContent}>
                   <Text style={styles.optionTitle}>Upload Audio File</Text>
                   <Text style={styles.optionDescription}>
-                    Upload MP3, WAV, M4A or other audio files for transcription
+                    Upload MP3, WAV, M4A or other audio files (converted to WAV 16kHz)
                   </Text>
                 </View>
               </TouchableOpacity>
             </View>
           </Animated.View>
         </Animated.View>
+      </Modal>
+
+      {/* Create Folder Modal */}
+      <Modal
+        visible={showCreateFolderModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCreateFolderModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowCreateFolderModal(false)}
+          />
+          
+          <View style={styles.createFolderModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create New Folder</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowCreateFolderModal(false)}
+                activeOpacity={0.7}
+              >
+                <X size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Organize your uploads by creating a new folder
+            </Text>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Folder Name</Text>
+              <TextInput
+                style={styles.formInput}
+                value={newFolderName}
+                onChangeText={setNewFolderName}
+                placeholder="Enter folder name"
+                placeholderTextColor={colors.textSecondary}
+                maxLength={50}
+              />
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Description (Optional)</Text>
+              <TextInput
+                style={[styles.formInput, styles.textArea]}
+                value={newFolderDescription}
+                onChangeText={setNewFolderDescription}
+                placeholder="Enter folder description"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                numberOfLines={3}
+                maxLength={200}
+              />
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Color</Text>
+              <View style={styles.colorPicker}>
+                {folderColors.map(color => (
+                  <TouchableOpacity
+                    key={color}
+                    style={[
+                      styles.colorOption,
+                      { backgroundColor: color },
+                      newFolderColor === color && styles.selectedColorOption
+                    ]}
+                    onPress={() => setNewFolderColor(color)}
+                    activeOpacity={0.7}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowCreateFolderModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.createButton, !newFolderName.trim() && styles.disabledButton]}
+                onPress={handleCreateFolder}
+                disabled={!newFolderName.trim()}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.createButtonText}>Create Folder</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -848,7 +1541,7 @@ function createStyles(colors: any) {
       alignItems: 'center',
       backgroundColor: colors.surface,
       paddingHorizontal: 16, // Reduced from 24
-      paddingTop: 50, // Reduced from 60
+      paddingTop: 35, // Reduced from 50
       paddingBottom: 12, // Reduced from 16
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
@@ -915,6 +1608,19 @@ function createStyles(colors: any) {
       fontSize: 14,
       fontWeight: '600',
     },
+    folderButton: {
+      width: 38, // Same as upload button height
+      height: 38, // Same as upload button height
+      borderRadius: 10,
+      backgroundColor: colors.border + '40',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    },
     menuButton: {
       width: 38, // Same as upload button height
       height: 38, // Same as upload button height
@@ -928,11 +1634,21 @@ function createStyles(colors: any) {
       shadowRadius: 2,
       elevation: 1,
     },
-    // Library Header - Reduced padding
+    // Library Header - Increased padding
     libraryHeader: {
       backgroundColor: colors.surface,
-      paddingHorizontal: 16, // Reduced from 24
-      paddingBottom: 16, // Reduced from 20
+      paddingHorizontal: 20, // Increased from 16
+      paddingTop: 12, // Added top padding
+      paddingBottom: 20, // Increased from 16
+    },
+    libraryHeaderContent: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+      gap: 16,
+    },
+    libraryTitleSection: {
+      flex: 1,
     },
     title: {
       fontSize: 28,
@@ -943,6 +1659,29 @@ function createStyles(colors: any) {
     subtitle: {
       fontSize: 16,
       color: colors.textSecondary,
+    },
+    sortButton: {
+      backgroundColor: colors.background,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    sortButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    sortButtonText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: '500',
     },
     emptyState: {
       flex: 1,
@@ -1039,6 +1778,24 @@ function createStyles(colors: any) {
       fontSize: 12,
       fontWeight: '500',
     },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    playButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
     cardContent: {
       gap: 12, // Reduced from 16
     },
@@ -1133,12 +1890,10 @@ function createStyles(colors: any) {
     },
     // Dropdown menu styles
     dropdownOverlay: {
-      flex: 1,
-      backgroundColor: colors.overlay,
-      justifyContent: 'flex-start',
-      alignItems: 'flex-end',
-      paddingTop: 110, // Adjusted for reduced top bar height
-      paddingRight: 16, // Reduced from 24
+      position: 'absolute',
+      top: 95, // Adjusted for reduced top bar height (was 110)
+      right: 16, // Reduced from 24
+      zIndex: 1,
     },
     dropdownMenu: {
       backgroundColor: colors.surface,
@@ -1269,21 +2024,95 @@ function createStyles(colors: any) {
     disabledFileIcon: {
       backgroundColor: colors.textSecondary + '15',
     },
-    processingText: {
-      fontSize: 14,
-      color: colors.warning,
-      marginTop: 8,
-      textAlign: 'center',
+    // Upload Progress Indicator Styles
+    uploadIndicatorContent: {
+      paddingHorizontal: 16,
+      paddingVertical: 12, // Reduced vertical padding
+      marginTop: 8, // Add top margin to separate from top bar
+      marginBottom: 4, // Reduced bottom margin
     },
-    boltLogo: {
-      marginTop: 20,
-      marginBottom: 10,
+    uploadIndicatorInner: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
+      borderWidth: 1,
+      borderColor: colors.primary + '20',
+    },
+    uploadContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    uploadIconContainer: {
+      width: 32,
+      height: 32,
+      backgroundColor: colors.primary + '15',
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    uploadTextContainer: {
+      flex: 1,
+    },
+    uploadTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 2,
+    },
+    uploadFileName: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginBottom: 8,
+    },
+    conversionText: {
+      fontSize: 11,
+      color: colors.primary,
+      fontStyle: 'italic',
+      marginBottom: 4,
+    },
+    progressContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    progressBarBackground: {
+      flex: 1,
+      height: 4,
+      backgroundColor: colors.border,
+      borderRadius: 2,
+      overflow: 'hidden',
+    },
+    progressBar: {
+      height: '100%',
+      backgroundColor: colors.primary,
+      borderRadius: 2,
+    },
+    progressText: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: '500',
+      minWidth: 35,
+      textAlign: 'right',
+    },
+    processingText: {
+      fontSize: 11,
+      color: colors.warning,
+      fontStyle: 'italic',
+      marginTop: 4,
     },
     // Floating Recording Bubble Styles (LibraryScreen only) - Content Flow Positioning
     floatingRecordingBubbleContent: {
       paddingHorizontal: 16,
-      paddingBottom: 16,
-      paddingTop: 24, // Added more top margin
+      paddingVertical: 20, // Increased vertical padding for better spacing
+      marginTop: 8, // Add top margin for consistency with upload indicator
+      marginBottom: 8, // Add bottom margin for consistency
     },
     floatingRecordingBubbleInner: {
       backgroundColor: colors.surface,
@@ -1344,6 +2173,245 @@ function createStyles(colors: any) {
       borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    // Folder selection styles
+    folderSection: {
+      marginBottom: 20,
+    },
+    folderSectionTitle: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 12,
+    },
+    folderSelector: {
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    folderSelectorContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    folderSelectorText: {
+      fontSize: 16,
+      fontWeight: '500',
+    },
+    folderDropdown: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      marginTop: 8,
+      maxHeight: 200,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    folderOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    createFolderOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.primary + '10',
+    },
+    folderDivider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 4,
+    },
+    selectedFolderOption: {
+      backgroundColor: colors.primary + '15',
+    },
+    folderOptionText: {
+      fontSize: 16,
+      color: colors.text,
+      fontWeight: '500',
+    },
+    folderColorDot: {
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+    },
+    // Create Folder Modal styles
+    createFolderModal: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingTop: 20,
+      paddingHorizontal: 24,
+      paddingBottom: 40,
+      maxHeight: '80%',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: -4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 10,
+    },
+    formSection: {
+      marginBottom: 20,
+    },
+    formLabel: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    formInput: {
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      fontSize: 16,
+      color: colors.text,
+    },
+    textArea: {
+      height: 80,
+      textAlignVertical: 'top',
+    },
+    colorPicker: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 12,
+    },
+    colorOption: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      borderWidth: 3,
+      borderColor: 'transparent',
+    },
+    selectedColorOption: {
+      borderColor: colors.text,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      gap: 12,
+      marginTop: 20,
+    },
+    cancelButton: {
+      flex: 1,
+      backgroundColor: colors.border + '40',
+      borderRadius: 12,
+      paddingVertical: 16,
+      alignItems: 'center',
+    },
+    cancelButtonText: {
+      color: colors.textSecondary,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    createButton: {
+      flex: 1,
+      backgroundColor: colors.primary,
+      borderRadius: 12,
+      paddingVertical: 16,
+      alignItems: 'center',
+    },
+    createButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    disabledButton: {
+      opacity: 0.5,
+    },
+    boltLogo: {
+      marginTop: 20,
+      marginBottom: 10,
+    },
+    // Multi-select styles
+    selectedCard: {
+      borderColor: colors.primary,
+      borderWidth: 2,
+      backgroundColor: colors.primary + '08',
+    },
+    selectionCheckbox: {
+      marginRight: 12,
+      alignSelf: 'flex-start',
+      marginTop: 4,
+    },
+    selectionText: {
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    libraryHeaderActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    selectButton: {
+      backgroundColor: colors.border + '40',
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    selectButtonActive: {
+      backgroundColor: colors.primary,
+    },
+    selectButtonText: {
+      color: colors.textSecondary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    selectButtonTextActive: {
+      color: '#FFFFFF',
+    },
+    selectionControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    selectAllButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    selectAllText: {
+      color: colors.primary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    deleteButton: {
+      backgroundColor: colors.error,
+      borderRadius: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    deleteButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '600',
     },
   });
 }

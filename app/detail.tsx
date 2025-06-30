@@ -10,15 +10,16 @@ import {
   Modal,
   Pressable,
   Linking,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X, Play, Pause, Settings, Download } from 'lucide-react-native';
-import { Audio } from 'expo-av';
+import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X, Play, Pause, Settings, Download, FolderPlus, Folder, CheckCircle, Plus } from 'lucide-react-native';
 import BoltLogo from '@/components/BoltLogo';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
@@ -80,26 +81,57 @@ export default function DetailScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colors } = useTheme();
+  const {
+    currentUpload: globalCurrentUpload,
+    sound: globalSound,
+    isPlaying: globalIsPlaying,
+    isLoading: globalAudioLoading,
+    currentPosition: globalCurrentPosition,
+    duration: globalDuration,
+    activeSegmentId: globalActiveSegmentId,
+    playAudio,
+    togglePlayback: globalTogglePlayback,
+    seekToPosition: globalSeekToPosition,
+    getTranscriptionData: globalGetTranscriptionData,
+  } = useAudioPlayer();
+  
   const [upload, setUpload] = useState<UploadWithData | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDropdownMenu, setShowDropdownMenu] = useState(false);
   
-  // Audio player state
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [audioLoading, setAudioLoading] = useState(false);
-  const [currentPosition, setCurrentPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
+  // File name editing state
+  const [isEditingFileName, setIsEditingFileName] = useState(false);
+  const [editingFileName, setEditingFileName] = useState('');
+  const [isUpdatingFileName, setIsUpdatingFileName] = useState(false);
+  
+  // Local state for UI interactions
   const [hoveredSegmentIndex, setHoveredSegmentIndex] = useState<number | null>(null);
+  
+  // Folder management state
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [folders, setFolders] = useState<Array<{id: string; name: string; color: string; description?: string}>>([]);
+  const [currentFolders, setCurrentFolders] = useState<Set<string>>(new Set());
+  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
+  const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderDescription, setNewFolderDescription] = useState('');
+  const [newFolderColor, setNewFolderColor] = useState('#3B82F6');
   const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
   const [hoveredWordIndex, setHoveredWordIndex] = useState<number | null>(null);
-  const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [hoveredSegmentId, setHoveredSegmentId] = useState<string | null>(null);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [progressBarWidth, setProgressBarWidth] = useState<number>(200);
+  
+  // Check if this upload is currently playing in the global player
+  const isCurrentlyPlaying = globalCurrentUpload?.id === upload?.id;
+  const sound = isCurrentlyPlaying ? globalSound : null;
+  const isPlaying = isCurrentlyPlaying ? globalIsPlaying : false;
+  const audioLoading = isCurrentlyPlaying ? globalAudioLoading : false;
+  const currentPosition = isCurrentlyPlaying ? globalCurrentPosition : 0;
+  const duration = isCurrentlyPlaying ? globalDuration : 0;
+  const activeSegmentId = isCurrentlyPlaying ? globalActiveSegmentId : null;
   
   const scrollViewRef = useRef<ScrollView>(null);
   const summaryRef = useRef<View>(null);
@@ -107,6 +139,19 @@ export default function DetailScreen() {
   const contentRef = useRef<View>(null);
 
   const styles = createStyles(colors);
+
+  const folderColors = [
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Yellow
+    '#EF4444', // Red
+    '#8B5CF6', // Purple
+    '#06B6D4', // Cyan
+    '#F97316', // Orange
+    '#84CC16', // Lime
+    '#EC4899', // Pink
+    '#6B7280', // Gray
+  ];
 
   const scrollToSection = (sectionRef: React.RefObject<View | null>) => {
     if (sectionRef.current && scrollViewRef.current) {
@@ -131,87 +176,23 @@ export default function DetailScreen() {
     useCallback(() => {
       // Screen is focused - no action needed
       return () => {
-        // Screen is losing focus - stop and cleanup audio
-        if (sound) {
-          console.log('Screen losing focus - stopping audio');
-          sound.stopAsync().then(() => {
-            setIsPlaying(false);
-            setCurrentPosition(0);
-            setActiveSegmentId(null);
-          }).catch((error) => {
-            console.error('Error stopping audio on focus loss:', error);
-          });
-        }
+        // Screen is losing focus - no need to stop global audio player
+        // The global audio player should continue playing
+        console.log('Screen losing focus - global audio continues playing');
       };
-    }, [sound])
+    }, [])
   );
 
-  // Cleanup audio on unmount
+  // Cleanup is handled by global audio player
   useEffect(() => {
     return () => {
-      if (sound) {
-        sound.stopAsync().then(() => {
-          sound.unloadAsync();
-        }).catch((error) => {
-          console.error('Error stopping audio on cleanup:', error);
-          sound.unloadAsync();
-        });
-      }
+      // No local cleanup needed - global audio player handles this
+      console.log('Detail screen unmounting - global audio continues');
     };
-  }, [sound]);
+  }, []);
 
-  // Audio position tracking for segment-level highlighting
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    
-    if (sound && isPlaying) {
-      interval = setInterval(async () => {
-        try {
-          const status = await sound.getStatusAsync();
-          if (status.isLoaded && status.positionMillis !== undefined) {
-            const positionSeconds = status.positionMillis / 1000;
-            setCurrentPosition(positionSeconds);
-            
-            // Find active segment based on current position
-            const transcriptionData = getTranscriptionData();
-            if (transcriptionData && transcriptionData.words && transcriptionData.words.length > 0) {
-              const speakerParagraphs = createSpeakerParagraphs(transcriptionData.words);
-              let activeSegmentId: string | null = null;
-              
-              // Find which segment contains the current position
-              for (let paragraphIndex = 0; paragraphIndex < speakerParagraphs.length; paragraphIndex++) {
-                const paragraph = speakerParagraphs[paragraphIndex];
-                for (let segmentIndex = 0; segmentIndex < paragraph.segments.length; segmentIndex++) {
-                  const segment = paragraph.segments[segmentIndex];
-                  
-                  if (positionSeconds >= segment.start && positionSeconds <= segment.end) {
-                    activeSegmentId = `${paragraphIndex}-${segmentIndex}`;
-                    console.log(`Active segment: "${segment.text}" (${segment.start}s - ${segment.end}s)`);
-                    break;
-                  }
-                }
-                if (activeSegmentId) break;
-              }
-              
-              // Update state only if the active segment changed
-              setActiveSegmentId(activeSegmentId);
-            }
-          }
-        } catch (error) {
-          console.error('Error getting audio status:', error);
-        }
-      }, 100);
-    } else {
-      // Clear active segment when not playing
-      if (activeSegmentId !== null) {
-        setActiveSegmentId(null);
-      }
-    }
-    
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [sound, isPlaying]);
+  // Audio position tracking is handled by the global audio player
+  // No local tracking needed
 
   const fetchUploadDetail = async () => {
     if (!user || !id) return;
@@ -316,8 +297,14 @@ export default function DetailScreen() {
     }
   };
 
-  // Get the raw transcription data
+  // Get the raw transcription data - use global if available, otherwise local
   const getTranscriptionData = (): ElevenLabsTranscription | null => {
+    // If this upload is currently playing in global player, use global data
+    if (isCurrentlyPlaying) {
+      return globalGetTranscriptionData();
+    }
+    
+    // Otherwise, use local upload data
     if (!upload || !upload.transcriptions || upload.transcriptions.length === 0) {
       return null;
     }
@@ -527,121 +514,68 @@ export default function DetailScreen() {
     return segments;
   };
 
-  // Load and play audio
+  // Load and play audio using global audio player
   const loadAudio = async (shouldAutoPlay: boolean = true) => {
     if (!upload || upload.file_type !== 'audio') return;
 
-    setAudioLoading(true);
-    
     try {
-      // Configure audio mode for playback
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        staysActiveInBackground: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
-
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: upload.file_url },
-        { shouldPlay: shouldAutoPlay, isLooping: false },
-        onAudioStatusUpdate
-      );
-      
-      setSound(newSound);
-      console.log(`Audio loaded${shouldAutoPlay ? ' and playback started automatically' : ' without auto-play'}`);
+      // Use global audio player to play this upload
+      // Pass the upload with full transcription data
+      await playAudio(upload);
+      console.log(`Audio loaded via global player: ${upload.file_name}`);
     } catch (error) {
-      console.error('Error loading audio:', error);
+      console.error('Error loading audio via global player:', error);
       Alert.alert('Error', 'Failed to load audio file');
-    } finally {
-      setAudioLoading(false);
     }
   };
 
+  // Audio status update handler is no longer needed - handled by global player
   const onAudioStatusUpdate = (status: any) => {
-    if (status.isLoaded) {
-      const newDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
-      const newPosition = status.positionMillis !== undefined ? status.positionMillis / 1000 : 0;
-      
-      // Only update duration if it changed to avoid unnecessary re-renders
-      if (Math.abs(newDuration - duration) > 0.1) {
-        console.log(`Duration updated: ${newDuration.toFixed(2)}s`);
-        setDuration(newDuration);
-      }
-      
-      // Only update if the sound is actually playing to get smooth updates
-      setIsPlaying(status.isPlaying);
-      
-      // Update position (this will be updated frequently during playback)
-      if (status.positionMillis !== undefined) {
-        setCurrentPosition(newPosition);
-      }
-    }
+    // This function is no longer used since global audio player handles status updates
   };
 
   const togglePlayback = async () => {
-    if (!sound) {
-      console.log('No sound loaded, loading audio and starting playback...');
+    if (!upload || upload.file_type !== 'audio') return;
+    
+    if (!isCurrentlyPlaying || !sound) {
+      // Load and play audio via global player
+      console.log('No sound loaded or different upload, loading audio and starting playback...');
       await loadAudio();
-      // After loading, the audio will start playing automatically via loadAudio
       return;
     }
 
-    try {
-      const status = await sound.getStatusAsync();
-      if (status.isLoaded) {
-        if (isPlaying) {
-          console.log('Pausing audio...');
-          await sound.pauseAsync();
-        } else {
-          console.log('Starting audio playback...');
-          await sound.playAsync();
-        }
-      }
-    } catch (error) {
-      console.error('Error toggling playback:', error);
-    }
+    // Use global toggle playback
+    await globalTogglePlayback();
   };
 
   const seekToPosition = async (seconds: number) => {
-    if (!sound) {
-      console.log('Cannot seek - no sound loaded');
+    if (!isCurrentlyPlaying || !sound) {
+      console.log('Cannot seek - not currently playing or no sound loaded');
       return;
     }
 
-    try {
-      console.log(`Seeking to position: ${seconds.toFixed(2)}s`);
-      
-      // First, get the current status to ensure audio is loaded
-      const status = await sound.getStatusAsync();
-      if (!status.isLoaded) {
-        console.log('Audio not loaded, cannot seek');
-        return;
-      }
-      
-      // Ensure the seek position is within valid bounds
-      const maxDuration = status.durationMillis ? status.durationMillis / 1000 : duration;
-      const clampedSeconds = Math.max(0, Math.min(seconds, maxDuration));
-      
-      console.log(`Seeking to ${clampedSeconds.toFixed(2)}s (max: ${maxDuration.toFixed(2)}s)`);
-      
-      // Perform the seek
-      await sound.setPositionAsync(clampedSeconds * 1000);
-      
-      // Update the current position immediately for better UI feedback
-      setCurrentPosition(clampedSeconds);
-      
-      console.log(`Successfully seeked to ${clampedSeconds.toFixed(2)}s`);
-    } catch (error) {
-      console.error('Error seeking audio:', error);
-      Alert.alert('Error', 'Failed to seek to position');
-    }
+    // Use global seek function
+    await globalSeekToPosition(seconds);
   };
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
+    // Handle invalid values (NaN, infinity, negative, null, undefined)
+    if (!seconds || !isFinite(seconds) || seconds < 0 || isNaN(seconds)) {
+      return '0:00';
+    }
+    
+    // Ensure we have a valid number
+    const validSeconds = Math.max(0, Math.floor(seconds));
+    const mins = Math.floor(validSeconds / 60);
+    const secs = validSeconds % 60;
+    
+    // Handle very large durations (over 99 minutes)
+    if (mins > 99) {
+      const hours = Math.floor(mins / 60);
+      const remainingMins = mins % 60;
+      return `${hours}:${remainingMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
@@ -802,7 +736,7 @@ export default function DetailScreen() {
       setTimeout(() => {
         Alert.alert(
           'Success', 
-          `"${upload.file_name}" has been deleted successfully.${storageDeleted ? '' : ' (Note: File may still exist in storage)'}`
+          `"${upload.generated_name || upload.file_name}" has been deleted successfully.${storageDeleted ? '' : ' (Note: File may still exist in storage)'}`
         );
       }, 100);
       
@@ -853,7 +787,7 @@ export default function DetailScreen() {
       // For React Native, we need to use a different approach
       // Create a modified URL that preserves the filename for download
       const originalUrl = upload.file_url;
-      const displayFileName = upload.file_name;
+      const displayFileName = upload.generated_name || upload.file_name;
       
       // Try to create a blob URL with proper filename (for web environments)
       if (typeof window !== 'undefined' && window.document) {
@@ -902,7 +836,7 @@ export default function DetailScreen() {
           await Linking.openURL(upload.file_url);
           Alert.alert(
             'Download Started', 
-            `File is downloading. Display name: "${upload.file_name}"`,
+            `File is downloading. Display name: "${upload.generated_name || upload.file_name}"`,
             [{ text: 'OK' }]
           );
         } else {
@@ -912,6 +846,239 @@ export default function DetailScreen() {
         console.error('Fallback download also failed:', fallbackError);
         Alert.alert('Error', 'Failed to download file. Please try again later.');
       }
+    }
+  };
+
+  // Handle file name editing
+  const startEditingFileName = () => {
+    if (!upload) return;
+    setEditingFileName(upload.generated_name || upload.file_name);
+    setIsEditingFileName(true);
+  };
+
+  const cancelEditingFileName = () => {
+    setIsEditingFileName(false);
+    setEditingFileName('');
+  };
+
+  const validateFileName = (fileName: string): string | null => {
+    // Trim whitespace
+    const trimmedName = fileName.trim();
+    
+    // Check if empty
+    if (!trimmedName) {
+      return 'File name cannot be empty';
+    }
+    
+    // Check for illegal characters (common across different file systems)
+    const illegalChars = /[<>:"/\\|?*\x00-\x1f]/;
+    if (illegalChars.test(trimmedName)) {
+      return 'File name contains illegal characters';
+    }
+    
+    // Check if it's just dots or spaces
+    if (/^[\s.]+$/.test(trimmedName)) {
+      return 'File name cannot be only dots or spaces';
+    }
+    
+    // Check length (most file systems support up to 255 characters)
+    if (trimmedName.length > 255) {
+      return 'File name is too long (maximum 255 characters)';
+    }
+    
+    // Check for reserved names (Windows)
+    const reservedNames = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
+    const nameWithoutExtension = trimmedName.split('.')[0].toUpperCase();
+    if (reservedNames.includes(nameWithoutExtension)) {
+      return 'File name is reserved and cannot be used';
+    }
+    
+    return null; // Valid
+  };
+
+  const saveFileName = async () => {
+    if (!upload || !user) return;
+    
+    const validationError = validateFileName(editingFileName);
+    if (validationError) {
+      Alert.alert('Invalid File Name', validationError);
+      return;
+    }
+    
+    const trimmedName = editingFileName.trim();
+    
+    // Check if name actually changed
+    if (trimmedName === (upload.generated_name || upload.file_name)) {
+      setIsEditingFileName(false);
+      return;
+    }
+    
+    setIsUpdatingFileName(true);
+    
+    try {
+      const { error } = await supabase
+        .from('uploads')
+        .update({ generated_name: trimmedName })
+        .eq('id', upload.id)
+        .eq('user_id', user.id);
+      
+      if (error) {
+        console.error('Error updating file name:', error);
+        Alert.alert('Error', 'Failed to update file name. Please try again.');
+        return;
+      }
+      
+      // Update local state
+      setUpload(prev => prev ? { ...prev, generated_name: trimmedName } : null);
+      setIsEditingFileName(false);
+      setEditingFileName('');
+      
+      console.log(`File name updated successfully: "${upload.generated_name || upload.file_name}" -> "${trimmedName}"`);
+      
+    } catch (error) {
+      console.error('Error updating file name:', error);
+      Alert.alert('Error', 'Failed to update file name. Please try again.');
+    } finally {
+      setIsUpdatingFileName(false);
+    }
+  };
+
+  const handleFileNameSubmit = () => {
+    saveFileName();
+  };
+
+  // Folder management functions
+  const fetchFolders = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('folders')
+        .select('id, name, color, description')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setFolders(data || []);
+    } catch (error) {
+      console.error('Error fetching folders:', error);
+    }
+  };
+
+  const fetchCurrentFolders = async () => {
+    if (!user || !upload) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('upload_folders')
+        .select('folder_id')
+        .eq('upload_id', upload.id);
+
+      if (error) throw error;
+
+      const folderIds = new Set((data || []).map(item => item.folder_id));
+      setCurrentFolders(folderIds);
+      setSelectedFolders(new Set(folderIds)); // Initialize selected with current
+    } catch (error) {
+      console.error('Error fetching current folders:', error);
+    }
+  };
+
+  const handleFoldersPress = async () => {
+    setShowDropdownMenu(false);
+    await fetchFolders();
+    await fetchCurrentFolders();
+    
+    setTimeout(() => {
+      setShowFolderModal(true);
+    }, 150);
+  };
+
+  const handleToggleFolder = (folderId: string) => {
+    const newSelected = new Set(selectedFolders);
+    if (newSelected.has(folderId)) {
+      newSelected.delete(folderId);
+    } else {
+      newSelected.add(folderId);
+    }
+    setSelectedFolders(newSelected);
+  };
+
+  const handleSaveFolders = async () => {
+    if (!upload) return;
+
+    try {
+      // Get folders to add and remove
+      const foldersToAdd = Array.from(selectedFolders).filter(id => !currentFolders.has(id));
+      const foldersToRemove = Array.from(currentFolders).filter(id => !selectedFolders.has(id));
+
+      // Remove from folders
+      if (foldersToRemove.length > 0) {
+        const { error: removeError } = await supabase
+          .from('upload_folders')
+          .delete()
+          .eq('upload_id', upload.id)
+          .in('folder_id', foldersToRemove);
+
+        if (removeError) throw removeError;
+      }
+
+      // Add to folders
+      if (foldersToAdd.length > 0) {
+        const insertData = foldersToAdd.map(folderId => ({
+          upload_id: upload.id,
+          folder_id: folderId,
+        }));
+
+        const { error: addError } = await supabase
+          .from('upload_folders')
+          .insert(insertData);
+
+        if (addError) throw addError;
+      }
+
+      // Update current folders
+      setCurrentFolders(new Set(selectedFolders));
+      setShowFolderModal(false);
+
+    } catch (error) {
+      console.error('Error updating folders:', error);
+      Alert.alert('Error', 'Failed to update folders');
+    }
+  };
+
+  const handleCreateFolder = async () => {
+    if (!user || !newFolderName.trim()) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('folders')
+        .insert({
+          user_id: user.id,
+          name: newFolderName.trim(),
+          description: newFolderDescription.trim() || null,
+          color: newFolderColor,
+        })
+        .select('id, name, color, description')
+        .single();
+
+      if (error) throw error;
+
+      // Add the new folder to the list and select it
+      if (data) {
+        setFolders(prev => [data, ...prev]);
+        setSelectedFolders(prev => new Set([...prev, data.id]));
+      }
+
+      // Reset form and close modal
+      setNewFolderName('');
+      setNewFolderDescription('');
+      setNewFolderColor('#3B82F6');
+      setShowCreateFolderModal(false);
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      Alert.alert('Error', 'Failed to create folder');
     }
   };
 
@@ -999,14 +1166,14 @@ export default function DetailScreen() {
                       if (isSelectedSegment) {
                         // Second click on same segment - load audio and seek
                         console.log('Second click - loading audio and seeking');
-                        if (sound) {
-                          seekToPosition(segment.start);
+                        if (isCurrentlyPlaying && sound) {
+                          await seekToPosition(segment.start);
                         } else {
                           await loadAudio();
                           // After loading, seek to the position
                           setTimeout(() => {
                             seekToPosition(segment.start);
-                          }, 100);
+                          }, 500); // Give time for audio to load
                         }
                       } else {
                         // First click - just highlight the segment
@@ -1102,9 +1269,41 @@ export default function DetailScreen() {
 
       {/* File Information Section - Clean without bounding box */}
       <View style={styles.fileInfoSection}>
-        <Text style={styles.fileName} numberOfLines={2}>
-          {upload.file_name}
-        </Text>
+        {isEditingFileName ? (
+          <View style={styles.fileNameEditContainer}>
+            <TextInput
+              style={styles.fileNameInput}
+              value={editingFileName}
+              onChangeText={setEditingFileName}
+              onSubmitEditing={handleFileNameSubmit}
+              onBlur={saveFileName}
+              multiline={true}
+              numberOfLines={2}
+              autoFocus={true}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              placeholder="Enter file name"
+              placeholderTextColor={colors.textSecondary}
+            />
+            {isUpdatingFileName && (
+              <ActivityIndicator 
+                size="small" 
+                color={colors.primary} 
+                style={styles.fileNameLoader}
+              />
+            )}
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.fileNameContainer}
+            onPress={startEditingFileName}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.fileName} numberOfLines={2}>
+              {upload.generated_name || upload.file_name}
+            </Text>
+          </TouchableOpacity>
+        )}
         <Text style={styles.fileType}>
           {upload.file_type === 'audio' ? 'Audio Recording' : 'Document'}
         </Text>
@@ -1219,7 +1418,7 @@ export default function DetailScreen() {
               
               <View style={styles.audioInfo}>
                 <Text style={styles.audioTime}>
-                  {formatTime(currentPosition)} / {formatTime(duration)}
+                  {formatTime(currentPosition)} / {duration > 0 ? formatTime(duration) : '--:--'}
                 </Text>
                 <View style={styles.progressContainer}>
                   <TouchableOpacity
@@ -1242,12 +1441,12 @@ export default function DetailScreen() {
                         - progressBarWidth: ${currentWidth}px
                         - percentage: ${(percentage * 100).toFixed(1)}%
                         - duration: ${duration.toFixed(2)}s
-                        - sound exists: ${!!sound}`);
+                        - isCurrentlyPlaying: ${isCurrentlyPlaying}`);
                       
-                      // If no sound loaded yet, load it first
-                      if (!sound) {
+                      // If not currently playing this audio, load it first
+                      if (!isCurrentlyPlaying || !sound) {
                         console.log('Loading audio first...');
-                        await loadAudio(false); // Load without auto-play
+                        await loadAudio(); // This will load and start playing
                         
                         // Wait for audio to be fully loaded and duration to be available
                         let attempts = 0;
@@ -1328,6 +1527,17 @@ export default function DetailScreen() {
           <View style={styles.dropdownMenu}>
             <TouchableOpacity
               style={styles.dropdownItem}
+              onPress={handleFoldersPress}
+              activeOpacity={0.7}
+            >
+              <FolderPlus size={20} color={colors.text} />
+              <Text style={styles.dropdownItemText}>Manage Folders</Text>
+            </TouchableOpacity>
+            
+            <View style={styles.dropdownDivider} />
+            
+            <TouchableOpacity
+              style={styles.dropdownItem}
               onPress={handleDownloadPress}
               activeOpacity={0.7}
             >
@@ -1378,7 +1588,7 @@ export default function DetailScreen() {
             
             <Text style={styles.deleteTitle}>Delete Item</Text>
             <Text style={styles.deleteMessage}>
-              Are you sure you want to delete "{upload.file_name}"? This action cannot be undone and will remove all associated content including transcriptions, summaries, and key points.
+              Are you sure you want to delete "{upload.generated_name || upload.file_name}"? This action cannot be undone and will remove all associated content including transcriptions, summaries, and key points.
             </Text>
             
             <View style={styles.deleteActions}>
@@ -1407,6 +1617,214 @@ export default function DetailScreen() {
                 ) : (
                   <Text style={styles.deleteButtonText}>Delete</Text>
                 )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Folder Management Modal */}
+      <Modal
+        visible={showFolderModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowFolderModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowFolderModal(false)}
+          />
+          
+          <View style={styles.folderModal}>
+            <View style={styles.folderModalHeader}>
+              <Text style={styles.folderModalTitle}>Manage Folders</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowFolderModal(false)}
+                activeOpacity={0.7}
+              >
+                <X size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.folderModalSubtitle}>
+              Select folders for "{upload?.generated_name || upload?.file_name}"
+            </Text>
+
+            <ScrollView style={styles.folderList} showsVerticalScrollIndicator={false}>
+              {/* Create New Folder Option */}
+              <TouchableOpacity
+                style={styles.createFolderOption}
+                onPress={() => {
+                  setShowFolderModal(false);
+                  setTimeout(() => setShowCreateFolderModal(true), 300);
+                }}
+                activeOpacity={0.7}
+              >
+                <Plus size={16} color={colors.primary} />
+                <Text style={[styles.folderOptionText, { color: colors.primary }]}>Create New Folder</Text>
+              </TouchableOpacity>
+              
+              {folders.length > 0 && <View style={styles.folderDivider} />}
+
+              {folders.length === 0 ? (
+                <View style={styles.noFoldersContainer}>
+                  <Text style={styles.noFoldersText}>No folders available</Text>
+                </View>
+              ) : (
+                folders.map(folder => (
+                  <TouchableOpacity
+                    key={folder.id}
+                    style={[
+                      styles.folderOption,
+                      selectedFolders.has(folder.id) && styles.selectedFolderOption
+                    ]}
+                    onPress={() => handleToggleFolder(folder.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.folderOptionLeft}>
+                      <View style={styles.folderOptionIcon}>
+                        <Folder size={20} color={folder.color} />
+                        <View style={[styles.folderColorIndicator, { backgroundColor: folder.color }]} />
+                      </View>
+                      <View style={styles.folderOptionDetails}>
+                        <Text style={styles.folderOptionName} numberOfLines={1}>
+                          {folder.name}
+                        </Text>
+                        {folder.description && (
+                          <Text style={styles.folderOptionDescription} numberOfLines={1}>
+                            {folder.description}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    
+                    <View style={[
+                      styles.checkbox,
+                      selectedFolders.has(folder.id) && styles.checkedCheckbox
+                    ]}>
+                      {selectedFolders.has(folder.id) && (
+                        <CheckCircle size={20} color={colors.primary} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+
+            <View style={styles.folderModalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowFolderModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.saveFoldersButton}
+                onPress={handleSaveFolders}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.saveFoldersButtonText}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Create Folder Modal */}
+      <Modal
+        visible={showCreateFolderModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowCreateFolderModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowCreateFolderModal(false)}
+          />
+          
+          <View style={styles.createFolderModal}>
+            <View style={styles.folderModalHeader}>
+              <Text style={styles.folderModalTitle}>Create New Folder</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowCreateFolderModal(false)}
+                activeOpacity={0.7}
+              >
+                <X size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.folderModalSubtitle}>
+              Organize your uploads by creating a new folder
+            </Text>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Folder Name</Text>
+              <TextInput
+                style={styles.formInput}
+                value={newFolderName}
+                onChangeText={setNewFolderName}
+                placeholder="Enter folder name"
+                placeholderTextColor={colors.textSecondary}
+                maxLength={50}
+              />
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Description (Optional)</Text>
+              <TextInput
+                style={[styles.formInput, styles.textArea]}
+                value={newFolderDescription}
+                onChangeText={setNewFolderDescription}
+                placeholder="Enter folder description"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                numberOfLines={3}
+                maxLength={200}
+              />
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Color</Text>
+              <View style={styles.colorPicker}>
+                {folderColors.map(color => (
+                  <TouchableOpacity
+                    key={color}
+                    style={[
+                      styles.colorOption,
+                      { backgroundColor: color },
+                      newFolderColor === color && styles.selectedColorOption
+                    ]}
+                    onPress={() => setNewFolderColor(color)}
+                    activeOpacity={0.7}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.folderModalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowCreateFolderModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.saveFoldersButton, !newFolderName.trim() && styles.disabledButton]}
+                onPress={handleCreateFolder}
+                disabled={!newFolderName.trim()}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.saveFoldersButtonText}>Create Folder</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1517,12 +1935,39 @@ function createStyles(colors: any) {
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
+    fileNameContainer: {
+      marginBottom: 8,
+      minHeight: 36,
+      justifyContent: 'center',
+    },
     fileName: {
       fontSize: 24,
       fontWeight: '700',
       color: colors.text,
-      marginBottom: 8,
       lineHeight: 32,
+    },
+    fileNameEditContainer: {
+      marginBottom: 8,
+      minHeight: 36,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    fileNameInput: {
+      flex: 1,
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.text,
+      lineHeight: 32,
+      backgroundColor: colors.background,
+      borderWidth: 2,
+      borderColor: colors.primary,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      textAlignVertical: 'top',
+    },
+    fileNameLoader: {
+      marginLeft: 12,
     },
     fileType: {
       fontSize: 16,
@@ -1553,7 +1998,7 @@ function createStyles(colors: any) {
       flexDirection: 'row',
       backgroundColor: colors.surface,
       marginHorizontal: 16,
-      marginTop: 8,
+      marginTop: 16,
       borderRadius: 12,
       padding: 4,
       borderWidth: 1,
@@ -1684,9 +2129,8 @@ function createStyles(colors: any) {
     // Modal styles
     modalOverlay: {
       flex: 1,
-      backgroundColor: colors.overlay,
-      justifyContent: 'center',
-      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+      justifyContent: 'flex-end',
     },
     deleteModal: {
       backgroundColor: colors.surface,
@@ -1944,6 +2388,232 @@ function createStyles(colors: any) {
     },
     noTimestampSegment: {
       opacity: 0.8,
+    },
+    // Folder modal styles
+    modalBackdrop: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    folderModal: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingTop: 20,
+      paddingHorizontal: 24,
+      paddingBottom: 40,
+      maxHeight: '80%',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: -4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 10,
+    },
+    createFolderModal: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingTop: 20,
+      paddingHorizontal: 24,
+      paddingBottom: 40,
+      maxHeight: '80%',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: -4 },
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 10,
+    },
+    folderModalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    folderModalTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    closeButton: {
+      padding: 4,
+    },
+    folderModalSubtitle: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      marginBottom: 20,
+    },
+    folderList: {
+      maxHeight: 300,
+      marginBottom: 20,
+    },
+    noFoldersContainer: {
+      alignItems: 'center',
+      padding: 32,
+    },
+    noFoldersText: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      marginBottom: 16,
+    },
+    createFolderButton: {
+      backgroundColor: colors.primary + '15',
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      gap: 8,
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+    createFolderOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.primary + '10',
+    },
+    folderDivider: {
+      height: 1,
+      backgroundColor: colors.border,
+      marginVertical: 4,
+    },
+    createFolderButtonText: {
+      color: colors.primary,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    folderOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 12,
+      borderRadius: 12,
+      backgroundColor: colors.background,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    selectedFolderOption: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '10',
+    },
+    folderOptionLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    folderOptionIcon: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+      position: 'relative',
+    },
+    folderColorIndicator: {
+      position: 'absolute',
+      bottom: -2,
+      right: -2,
+      width: 12,
+      height: 12,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: colors.surface,
+    },
+    folderOptionDetails: {
+      flex: 1,
+    },
+    folderOptionName: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 2,
+    },
+    folderOptionDescription: {
+      fontSize: 14,
+      color: colors.textSecondary,
+    },
+    checkbox: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    checkedCheckbox: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primary + '15',
+    },
+    folderModalActions: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    saveFoldersButton: {
+      flex: 1,
+      backgroundColor: colors.primary,
+      borderRadius: 12,
+      paddingVertical: 16,
+      alignItems: 'center',
+    },
+    saveFoldersButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    // Form styles for create folder modal
+    formSection: {
+      marginBottom: 20,
+    },
+    formLabel: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    formInput: {
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      fontSize: 16,
+      color: colors.text,
+    },
+    textArea: {
+      height: 80,
+      textAlignVertical: 'top',
+    },
+    colorPicker: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 12,
+    },
+    colorOption: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      borderWidth: 3,
+      borderColor: 'transparent',
+    },
+    selectedColorOption: {
+      borderColor: colors.text,
+    },
+    folderOptionText: {
+      fontSize: 16,
+      color: colors.text,
+      fontWeight: '500',
+    },
+    disabledButton: {
+      opacity: 0.5,
     },
     boltLogo: {
       marginTop: 20,

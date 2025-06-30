@@ -29,6 +29,9 @@ export interface Database {
           file_type: 'audio' | 'document';
           file_url: string;
           file_size: number;
+          duration?: number | null;
+          generated_name?: string | null;
+          original_filename?: string | null;
           status: 'uploaded' | 'processing' | 'completed' | 'error';
           error_message?: string;
           created_at: string;
@@ -41,6 +44,9 @@ export interface Database {
           file_type: 'audio' | 'document';
           file_url: string;
           file_size: number;
+          duration?: number | null;
+          generated_name?: string | null;
+          original_filename?: string | null;
           status?: 'uploaded' | 'processing' | 'completed' | 'error';
           error_message?: string;
           created_at?: string;
@@ -53,6 +59,9 @@ export interface Database {
           file_type?: 'audio' | 'document';
           file_url?: string;
           file_size?: number;
+          duration?: number | null;
+          generated_name?: string | null;
+          original_filename?: string | null;
           status?: 'uploaded' | 'processing' | 'completed' | 'error';
           error_message?: string;
           created_at?: string;
@@ -145,6 +154,55 @@ export interface Database {
           upload_id?: string;
           point_text?: string;
           importance_level?: number;
+          created_at?: string;
+        };
+      };
+      folders: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          description?: string | null;
+          color: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          description?: string | null;
+          color?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          description?: string | null;
+          color?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      upload_folders: {
+        Row: {
+          id: string;
+          upload_id: string;
+          folder_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          upload_id: string;
+          folder_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          upload_id?: string;
+          folder_id?: string;
           created_at?: string;
         };
       };

@@ -123,6 +123,9 @@ function formatTimestamp(seconds: number): string {
   return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
+// Note: Audio conversion is now handled on the client side (React Native) before upload
+// This ensures the audio is already in the correct format when it reaches the Edge Function
+
 async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, supabase: any): Promise<string> {
   if (!ELEVEN_LABS_API_KEY) {
     throw new Error('Eleven Labs API key not configured. Please set ELEVEN_LABS_API_KEY in your Supabase Edge Function environment variables.');
@@ -145,8 +148,9 @@ async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, sup
     
     const audioBuffer = await audioResponse.arrayBuffer();
     
-    // Create audio blob for Eleven Labs client
-    const audioBlob = new Blob([audioBuffer], { type: "audio/mp3" });
+    // Convert audio buffer to blob for Eleven Labs API
+    // Audio is expected to already be in WAV format from React Native client
+    const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
 
     // Use Eleven Labs client for transcription
     const transcription = await elevenlabs.speechToText.convert({
@@ -189,6 +193,17 @@ async function processAudioWithElevenLabs(fileUrl: string, uploadId: string, sup
       throw new Error('Failed to save transcription to database');
     }
 
+    // Generate meaningful content name using Gemini
+    const contentName = await generateContentName(transcription.text);
+    
+    // Update the upload record with the generated name
+    await supabase
+      .from('uploads')
+      .update({ 
+        generated_name: contentName
+      })
+      .eq('id', uploadId);
+
     // Return the original plain text for AI processing (summary/key points)
     // The formatted text with timestamps is stored in the database
     return transcription.text;
@@ -213,7 +228,7 @@ async function processDocumentText(fileUrl: string, uploadId: string, supabase: 
     let extractedText = '';
 
     if (fileExtension === 'pdf') {
-      extractedText = await extractPDFText(docBuffer);
+      extractedText = await extractPDFWithGemini(docBuffer);
     } else if (fileExtension === 'docx') {
       extractedText = await extractDocxText(docBuffer);
     } else if (fileExtension === 'doc') {
@@ -238,6 +253,18 @@ The document has been uploaded successfully, but automatic text extraction is li
       throw new Error('No text could be extracted from the document. The file may be empty, corrupted, or contain only images.');
     }
 
+    // Generate meaningful content name using Gemini
+    const contentName = await generateContentName(extractedText);
+    
+    // Update the upload record with the generated name
+    await supabase
+      .from('uploads')
+      .update({ 
+        generated_name: contentName,
+        original_filename: fileName 
+      })
+      .eq('id', uploadId);
+
     // Save extracted text to database
     const { error: insertError } = await supabase
       .from('document_texts')
@@ -258,53 +285,93 @@ The document has been uploaded successfully, but automatic text extraction is li
   }
 }
 
-async function extractPDFText(buffer: ArrayBuffer): Promise<string> {
+async function extractPDFWithGemini(buffer: ArrayBuffer): Promise<string> {
+  if (!GOOGLE_GEMINI_API_KEY) {
+    throw new Error('Google Gemini API key not configured. Please set GOOGLE_GEMINI_API_KEY in your Supabase Edge Function environment variables.');
+  }
+
   try {
-    // Import PDF parsing library
-    const { getDocument } = await import('npm:pdfjs-dist@4.0.379');
+    // Convert PDF buffer to base64
+    const base64Data = btoa(String.fromCharCode(...new Uint8Array(buffer)));
     
-    // Configure PDF.js for Deno environment
-    const pdfjsLib = { getDocument };
-    
-    // Load the PDF document
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(buffer),
-      useSystemFonts: true,
+    const prompt = `
+      Please extract all text content from this PDF document with the following guidelines:
+      - Extract the main content, headings, paragraphs, lists, and other text elements
+      - If there are tables, convert them to readable text format
+      - Skip any images, graphics, headers, footers, page numbers, and watermarks
+      - Remove any boilerplate text, disclaimers, copyright notices, or navigation elements
+      - Focus only on the core educational/informational content
+      - Maintain logical reading order and structure
+      - Filter out any repetitive or administrative text
+      
+      Return only the clean, relevant text content without any additional commentary.
+    `;
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent?key=${GOOGLE_GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: "application/pdf",
+                data: base64Data
+              }
+            }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          topK: 32,
+          topP: 0.95,
+        }
+      }),
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gemini PDF extraction error:', errorText);
+      throw new Error(`Gemini API failed for PDF extraction: ${response.statusText}`);
+    }
+
+    const geminiData = await response.json();
     
-    const pdf = await loadingTask.promise;
-    let fullText = '';
-    
-    // Extract text from each page
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      
-      // Combine text items from the page
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ');
-      
-      if (pageText.trim()) {
-        fullText += `\n\n--- Page ${pageNum} ---\n${pageText}`;
-      }
+    // Validate response structure
+    if (!geminiData.candidates || !Array.isArray(geminiData.candidates) || geminiData.candidates.length === 0) {
+      console.error('No candidates found in Gemini PDF response');
+      throw new Error('No response received from Gemini API for PDF extraction');
     }
     
-    // Clean up the text
-    fullText = fullText
-      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-      .replace(/\n\s*\n/g, '\n\n') // Clean up multiple newlines
+    const candidate = geminiData.candidates[0];
+    
+    if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
+      console.error('No content parts found in PDF extraction candidate:', candidate);
+      throw new Error('No content received from Gemini API for PDF extraction');
+    }
+    
+    const extractedText = candidate.content.parts[0].text;
+    
+    if (!extractedText || typeof extractedText !== 'string' || extractedText.trim().length === 0) {
+      throw new Error('No valid text content extracted from PDF by Gemini API');
+    }
+    
+    // Clean up the extracted text
+    const cleanText = extractedText
+      .replace(/\r\n/g, '\n') // Normalize line endings
+      .replace(/\n\s*\n\s*\n/g, '\n\n') // Clean up excessive newlines
       .trim();
     
-    if (!fullText) {
-      throw new Error('PDF appears to contain no readable text. It may contain only images or be corrupted.');
-    }
+    console.log('PDF text extracted successfully via Gemini, length:', cleanText.length);
     
-    return fullText;
+    return cleanText;
   } catch (error) {
-    console.error('PDF extraction error:', error);
+    console.error('Gemini PDF extraction error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    throw new Error(`Failed to extract text from PDF: ${errorMessage}`);
+    throw new Error(`Failed to extract text from PDF using Gemini: ${errorMessage}`);
   }
 }
 
@@ -637,5 +704,95 @@ async function processSummaryWithGemini(text: string, uploadId: string, supabase
   } catch (error) {
     console.error('Gemini processing error:', error);
     throw error;
+  }
+}
+
+async function generateContentName(extractedText: string): Promise<string> {
+  if (!GOOGLE_GEMINI_API_KEY) {
+    console.warn('Google Gemini API key not configured for content naming');
+    return 'Document'; // Fallback name
+  }
+
+  try {
+    // Truncate text for naming (use first 3000 characters for better context)
+    const textForNaming = extractedText.length > 3000 
+      ? extractedText.substring(0, 3000) + '...'
+      : extractedText;
+
+    const prompt = `
+      Based on this text content, generate a concise and descriptive name (2-8 words) that captures the main topic, subject matter, or document title. 
+      The name should be professional and suitable for academic/educational content.
+      
+      Guidelines:
+      - Focus on the core subject matter or main topic
+      - Use clear, descriptive language
+      - Avoid generic terms like "document" or "text"
+      - If it's a lecture, course material, or academic content, include relevant subject/topic
+      - Keep it between 2-8 words
+      
+      Text content: ${textForNaming}
+      
+      Return only the descriptive name without quotes, explanations, or additional text.
+    `;
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent?key=${GOOGLE_GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.3,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 50,
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Gemini API error for content naming:', response.statusText);
+      return 'Document'; // Fallback name
+    }
+
+    const geminiData = await response.json();
+    
+    if (!geminiData.candidates || !Array.isArray(geminiData.candidates) || geminiData.candidates.length === 0) {
+      console.warn('No candidates found in Gemini response for content naming');
+      return 'Document'; // Fallback name
+    }
+
+    const candidate = geminiData.candidates[0];
+    
+    if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
+      console.warn('No content parts found in content naming candidate');
+      return 'Document'; // Fallback name
+    }
+
+    const generatedName = candidate.content.parts[0].text;
+    
+    if (!generatedName || typeof generatedName !== 'string' || generatedName.trim().length === 0) {
+      console.warn('No valid name generated by Gemini');
+      return 'Document'; // Fallback name
+    }
+
+    // Clean up the generated name - remove quotes, extra whitespace, and limit length
+    const cleanName = generatedName
+      .trim()
+      .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+      .replace(/[^\w\s-]/g, '') // Remove special characters except spaces and hyphens
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .substring(0, 100) // Limit length
+      .trim();
+
+    console.log(`Generated content name: "${cleanName}" from text preview: "${textForNaming.substring(0, 100)}..."`);
+    
+    return cleanName || 'Document'; // Fallback if cleaning results in empty string
+  } catch (error) {
+    console.error('Error generating content name:', error);
+    return 'Document'; // Fallback name
   }
 }

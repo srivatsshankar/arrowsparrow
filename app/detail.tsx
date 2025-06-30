@@ -19,7 +19,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
-import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X, Play, Pause, Settings, Download, FolderPlus, Folder, CheckCircle, Plus } from 'lucide-react-native';
+import { ArrowLeft, FileText, Mic, MessageSquare, List, Trash2, Menu, X, Play, Pause, Settings, Download, FolderPlus, Folder, CheckCircle, Plus, RotateCcw } from 'lucide-react-native';
 import BoltLogo from '@/components/BoltLogo';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
@@ -1322,6 +1322,18 @@ export default function DetailScreen() {
             {upload.status === 'completed' ? 'Processed' : 'Processing'}
           </Text>
         </View>
+
+        {/* Recap Button */}
+        {upload && upload.status === 'completed' && getKeyPoints().length > 0 && (
+          <TouchableOpacity
+            style={styles.recapButton}
+            onPress={() => router.push(`./recap?uploadId=${upload.id}`)}
+            activeOpacity={0.8}
+          >
+            <RotateCcw size={18} color="#000000" />
+            <Text style={styles.recapButtonText}>Start Recap</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Tab Navigation */}
@@ -2035,6 +2047,27 @@ function createStyles(colors: any) {
       shadowRadius: 4,
       elevation: 2,
       marginBottom: 16,
+    },
+    recapButton: {
+      backgroundColor: '#FECA57', // Yellow color
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start', // Make button fit content
+      paddingVertical: 8,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      gap: 6,
+      marginTop: 12,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    recapButtonText: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#000000',
     },
     sectionTitle: {
       fontSize: 20,

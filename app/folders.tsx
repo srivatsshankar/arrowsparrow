@@ -61,6 +61,12 @@ export default function FoldersScreen() {
   // Animation values for modal
   const [modalOpacity] = useState(new Animated.Value(0));
   const [modalTranslateY] = useState(new Animated.Value(300));
+  
+  // Confirmation modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  const [confirmTitle, setConfirmTitle] = useState('');
+  const [confirmMessage, setConfirmMessage] = useState('');
 
   const styles = createStyles(colors);
 
@@ -115,6 +121,21 @@ export default function FoldersScreen() {
       setFolderDescription('');
       setSelectedColor('#3B82F6');
     });
+  };
+
+  const showConfirmation = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmTitle(title);
+    setConfirmMessage(message);
+    setConfirmAction(() => onConfirm);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmAction = () => {
+    if (confirmAction) {
+      confirmAction();
+    }
+    setShowConfirmModal(false);
+    setConfirmAction(null);
   };
 
   const fetchFolders = async () => {
@@ -252,92 +273,97 @@ export default function FoldersScreen() {
   };
 
   const handleDeleteFolder = async (folder: Folder) => {
-    Alert.alert(
+    showConfirmation(
       'Delete Folder',
-      `Are you sure you want to delete "${folder.name}"? This will not delete the uploads inside it.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('folders')
-                .delete()
-                .eq('id', folder.id);
+      `Are you sure you want to delete "${folder.name}"? The uploads inside will be moved to unorganized.`,
+      async () => {
+        try {
+          // When we delete the folder, the CASCADE will automatically remove 
+          // the upload_folders associations, making those uploads unorganized
+          const { error } = await supabase
+            .from('folders')
+            .delete()
+            .eq('id', folder.id);
 
-              if (error) throw error;
-              fetchFolders();
-            } catch (error) {
-              console.error('Error deleting folder:', error);
-              Alert.alert('Error', 'Failed to delete folder');
-            }
-          },
-        },
-      ]
+          if (error) throw error;
+          fetchFolders();
+        } catch (error) {
+          console.error('Error deleting folder:', error);
+          Alert.alert('Error', 'Failed to delete folder');
+        }
+      }
     );
   };
 
   // Multi-select functions
   const toggleSelectionMode = () => {
+    console.log('Toggle selection mode, current state:', isSelectionMode);
     setIsSelectionMode(!isSelectionMode);
     setSelectedFolders(new Set());
   };
 
   const toggleFolderSelection = (folderId: string) => {
+    console.log('Toggle folder selection for:', folderId);
     const newSelection = new Set(selectedFolders);
     if (newSelection.has(folderId)) {
       newSelection.delete(folderId);
     } else {
       newSelection.add(folderId);
     }
+    console.log('New selection:', Array.from(newSelection));
     setSelectedFolders(newSelection);
   };
 
   const selectAllFolders = () => {
+    console.log('Select all folders pressed, current selection size:', selectedFolders.size, 'total folders:', folders.length);
     if (selectedFolders.size === folders.length) {
+      console.log('Deselecting all folders');
       setSelectedFolders(new Set());
     } else {
-      setSelectedFolders(new Set(folders.map(folder => folder.id)));
+      const allIds = new Set(folders.map(folder => folder.id));
+      console.log('Selecting all folders:', Array.from(allIds));
+      setSelectedFolders(allIds);
     }
   };
 
   const deleteSelectedFolders = async () => {
     if (selectedFolders.size === 0) return;
 
-    Alert.alert(
+    console.log('Delete folders button pressed, selected folders:', Array.from(selectedFolders));
+
+    showConfirmation(
       'Delete Folders',
-      `Are you sure you want to delete ${selectedFolders.size} folder${selectedFolders.size > 1 ? 's' : ''}? This will not delete the uploads inside them.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const folderIds = Array.from(selectedFolders);
-              
-              const { error } = await supabase
-                .from('folders')
-                .delete()
-                .in('id', folderIds);
+      `Are you sure you want to delete ${selectedFolders.size} folder${selectedFolders.size > 1 ? 's' : ''}? The uploads inside will be moved to unorganized.`,
+      async () => {
+        try {
+          console.log('Starting folder deletion process...');
+          const folderIds = Array.from(selectedFolders);
+          
+          console.log('Deleting folders with IDs:', folderIds);
+          // When we delete folders, the CASCADE will automatically remove 
+          // the upload_folders associations, making those uploads unorganized
+          const { error } = await supabase
+            .from('folders')
+            .delete()
+            .in('id', folderIds);
 
-              if (error) throw error;
-
-              // Update local state
-              setFolders(prev => prev.filter(folder => !selectedFolders.has(folder.id)));
-              setSelectedFolders(new Set());
-              setIsSelectionMode(false);
-
-              Alert.alert('Success', `${folderIds.length} folder${folderIds.length > 1 ? 's' : ''} deleted successfully`);
-            } catch (error) {
-              console.error('Error deleting folders:', error);
-              Alert.alert('Error', 'Failed to delete some folders');
-            }
+          if (error) {
+            console.error('Database deletion error:', error);
+            throw error;
           }
+
+          console.log('Successfully deleted folders from database');
+
+          // Update local state
+          setFolders(prev => prev.filter(folder => !selectedFolders.has(folder.id)));
+          setSelectedFolders(new Set());
+          setIsSelectionMode(false);
+
+        } catch (error) {
+          console.error('Error deleting folders:', error);
+          Alert.alert('Error', 'Failed to delete folders. Please try again.');
         }
-      ]
+      }
     );
   };
 
@@ -507,7 +533,10 @@ export default function FoldersScreen() {
             {selectedFolders.size > 0 && (
               <TouchableOpacity
                 style={styles.deleteButton}
-                onPress={deleteSelectedFolders}
+                onPress={() => {
+                  console.log('Delete button pressed, selected folders:', Array.from(selectedFolders));
+                  deleteSelectedFolders();
+                }}
                 activeOpacity={0.7}
               >
                 <Trash2 size={16} color="#FFFFFF" />
@@ -697,6 +726,34 @@ export default function FoldersScreen() {
             </View>
           </Animated.View>
         </Animated.View>
+      </Modal>
+
+      {/* Confirmation Modal */}
+      <Modal
+        transparent
+        visible={showConfirmModal}
+        animationType="fade"
+      >
+        <View style={styles.confirmModalOverlay}>
+          <View style={styles.confirmModalContent}>
+            <Text style={styles.confirmModalTitle}>{confirmTitle}</Text>
+            <Text style={styles.confirmModalMessage}>{confirmMessage}</Text>
+            <View style={styles.confirmModalActions}>
+              <TouchableOpacity
+                style={[styles.confirmModalButton, styles.confirmModalCancelButton]}
+                onPress={() => setShowConfirmModal(false)}
+              >
+                <Text style={styles.confirmModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmModalButton, styles.confirmModalConfirmButton]}
+                onPress={handleConfirmAction}
+              >
+                <Text style={styles.confirmModalConfirmText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -1084,6 +1141,66 @@ function createStyles(colors: any) {
     deleteButtonText: {
       color: '#FFFFFF',
       fontSize: 14,
+      fontWeight: '600',
+    },
+    // Confirmation modal styles
+    confirmModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    confirmModalContent: {
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 24,
+      width: '100%',
+      maxWidth: 320,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+    confirmModalTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    confirmModalMessage: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 20,
+      marginBottom: 24,
+    },
+    confirmModalActions: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    confirmModalButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    confirmModalCancelButton: {
+      backgroundColor: colors.border + '40',
+    },
+    confirmModalConfirmButton: {
+      backgroundColor: colors.error,
+    },
+    confirmModalCancelText: {
+      color: colors.textSecondary,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    confirmModalConfirmText: {
+      color: '#FFFFFF',
+      fontSize: 16,
       fontWeight: '600',
     },
   });

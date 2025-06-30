@@ -228,7 +228,7 @@ async function processDocumentText(fileUrl: string, uploadId: string, supabase: 
     let extractedText = '';
 
     if (fileExtension === 'pdf') {
-      extractedText = await extractPDFWithGemini(docBuffer);
+      extractedText = await extractPDFText(docBuffer);
     } else if (fileExtension === 'docx') {
       extractedText = await extractDocxText(docBuffer);
     } else if (fileExtension === 'doc') {
@@ -253,6 +253,13 @@ The document has been uploaded successfully, but automatic text extraction is li
       throw new Error('No text could be extracted from the document. The file may be empty, corrupted, or contain only images.');
     }
 
+    // Check if extracted text is too long (PostgreSQL text field limit is ~1GB but we'll be more conservative)
+    const maxTextLength = 10000000; // 10MB limit for extracted text
+    if (extractedText.length > maxTextLength) {
+      console.warn(`Extracted text too long (${extractedText.length} chars), truncating to ${maxTextLength} chars`);
+      extractedText = extractedText.substring(0, maxTextLength) + '\n\n[Note: Text was truncated due to length limits]';
+    }
+
     // Generate meaningful content name using Gemini
     const contentName = await generateContentName(extractedText);
     
@@ -266,112 +273,56 @@ The document has been uploaded successfully, but automatic text extraction is li
       .eq('id', uploadId);
 
     // Save extracted text to database
-    const { error: insertError } = await supabase
+    console.log('Attempting to save document text:', {
+      upload_id: uploadId,
+      text_length: extractedText.length,
+      text_preview: extractedText.substring(0, 200) + '...'
+    });
+
+    // First verify the upload exists
+    const { data: uploadExists, error: uploadCheckError } = await supabase
+      .from('uploads')
+      .select('id, status')
+      .eq('id', uploadId)
+      .single();
+
+    if (uploadCheckError || !uploadExists) {
+      console.error('Upload not found or inaccessible:', {
+        uploadId,
+        error: uploadCheckError
+      });
+      throw new Error(`Upload with ID ${uploadId} not found or inaccessible`);
+    }
+
+    console.log('Upload verified:', uploadExists);
+
+    const { data: insertData, error: insertError } = await supabase
       .from('document_texts')
       .insert({
         upload_id: uploadId,
         extracted_text: extractedText,
-      });
+      })
+      .select();
 
     if (insertError) {
-      console.error('Failed to save document text:', insertError);
-      throw new Error('Failed to save document text to database');
+      console.error('Failed to save document text:', {
+        error: insertError,
+        code: insertError.code,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+        upload_id: uploadId,
+        text_length: extractedText.length
+      });
+      throw new Error(`Failed to save document text to database: ${insertError.message || insertError.code || 'Unknown error'}`);
     }
+
+    console.log('Document text saved successfully:', insertData);
 
     return extractedText;
   } catch (error) {
     console.error('Document processing error:', error);
     throw error;
-  }
-}
-
-async function extractPDFWithGemini(buffer: ArrayBuffer): Promise<string> {
-  if (!GOOGLE_GEMINI_API_KEY) {
-    throw new Error('Google Gemini API key not configured. Please set GOOGLE_GEMINI_API_KEY in your Supabase Edge Function environment variables.');
-  }
-
-  try {
-    // Convert PDF buffer to base64
-    const base64Data = btoa(String.fromCharCode(...new Uint8Array(buffer)));
-    
-    const prompt = `
-      Please extract all text content from this PDF document with the following guidelines:
-      - Extract the main content, headings, paragraphs, lists, and other text elements
-      - If there are tables, convert them to readable text format
-      - Skip any images, graphics, headers, footers, page numbers, and watermarks
-      - Remove any boilerplate text, disclaimers, copyright notices, or navigation elements
-      - Focus only on the core educational/informational content
-      - Maintain logical reading order and structure
-      - Filter out any repetitive or administrative text
-      
-      Return only the clean, relevant text content without any additional commentary.
-    `;
-
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17:generateContent?key=${GOOGLE_GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt },
-            {
-              inline_data: {
-                mime_type: "application/pdf",
-                data: base64Data
-              }
-            }
-          ]
-        }],
-        generationConfig: {
-          temperature: 0.1,
-          topK: 32,
-          topP: 0.95,
-        }
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini PDF extraction error:', errorText);
-      throw new Error(`Gemini API failed for PDF extraction: ${response.statusText}`);
-    }
-
-    const geminiData = await response.json();
-    
-    // Validate response structure
-    if (!geminiData.candidates || !Array.isArray(geminiData.candidates) || geminiData.candidates.length === 0) {
-      console.error('No candidates found in Gemini PDF response');
-      throw new Error('No response received from Gemini API for PDF extraction');
-    }
-    
-    const candidate = geminiData.candidates[0];
-    
-    if (!candidate.content || !candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
-      console.error('No content parts found in PDF extraction candidate:', candidate);
-      throw new Error('No content received from Gemini API for PDF extraction');
-    }
-    
-    const extractedText = candidate.content.parts[0].text;
-    
-    if (!extractedText || typeof extractedText !== 'string' || extractedText.trim().length === 0) {
-      throw new Error('No valid text content extracted from PDF by Gemini API');
-    }
-    
-    // Clean up the extracted text
-    const cleanText = extractedText
-      .replace(/\r\n/g, '\n') // Normalize line endings
-      .replace(/\n\s*\n\s*\n/g, '\n\n') // Clean up excessive newlines
-      .trim();
-    
-    console.log('PDF text extracted successfully via Gemini, length:', cleanText.length);
-    
-    return cleanText;
-  } catch (error) {
-    console.error('Gemini PDF extraction error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    throw new Error(`Failed to extract text from PDF using Gemini: ${errorMessage}`);
   }
 }
 
@@ -405,6 +356,41 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
     console.error('DOCX extraction error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     throw new Error(`Failed to extract text from DOCX: ${errorMessage}`);
+  }
+}
+
+async function extractPDFText(buffer: ArrayBuffer): Promise<string> {
+  try {
+    // Import pdf-parse for PDF text extraction
+    const pdfParse = await import('npm:pdf-parse@1.1.1');
+    
+    // Extract text from PDF using pdf-parse
+    const data = await pdfParse.default(buffer);
+    
+    if (!data.text || data.text.trim().length === 0) {
+      throw new Error('PDF file appears to contain no readable text. It may be image-based, encrypted, or corrupted.');
+    }
+    
+    // Clean up the extracted text
+    const cleanText = data.text
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '') // Remove null bytes and control characters
+      .replace(/\r\n/g, '\n') // Normalize line endings
+      .replace(/\r/g, '\n') // Convert remaining \r to \n
+      .replace(/\n\s*\n\s*\n/g, '\n\n') // Clean up excessive newlines
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    if (!cleanText || cleanText.length < 10) {
+      throw new Error('PDF file appears to contain minimal or no readable text content.');
+    }
+    
+    console.log('PDF text extracted successfully using pdf-parse, length:', cleanText.length);
+    
+    return cleanText;
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    throw new Error(`Failed to extract text from PDF: ${errorMessage}`);
   }
 }
 

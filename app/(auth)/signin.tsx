@@ -8,9 +8,11 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { LogIn, Mail, Lock } from 'lucide-react-native';
 import BoltLogo from '@/components/BoltLogo';
 
@@ -19,6 +21,7 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { signIn } = useAuth();
+  const { colors, isDarkMode } = useTheme();
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -36,6 +39,8 @@ export default function SignIn() {
     }
   };
 
+  const styles = createStyles(colors);
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -44,18 +49,26 @@ export default function SignIn() {
       <View style={styles.content}>
         <View style={styles.header}>
           <View style={styles.appIcon}>
-            <Text style={styles.appIconText}>🏹</Text>
+            <Image 
+              source={isDarkMode 
+                ? require('@/assets/app-icon/app-icon-dark.png')
+                : require('@/assets/app-icon/app-icon-light.png')
+              }
+              style={styles.appIconImage}
+              resizeMode="contain"
+            />
           </View>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue to Arrow Sparrow</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Welcome Back</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Sign in to continue to Arrow Sparrow</Text>
         </View>
 
         <View style={styles.form}>
           <View style={styles.inputContainer}>
-            <Mail size={20} color="#6B7280" style={styles.inputIcon} />
+            <Mail size={20} color={colors.textSecondary} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Email"
+              placeholderTextColor={colors.textSecondary}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -65,10 +78,11 @@ export default function SignIn() {
           </View>
 
           <View style={styles.inputContainer}>
-            <Lock size={20} color="#6B7280" style={styles.inputIcon} />
+            <Lock size={20} color={colors.textSecondary} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
               placeholder="Password"
+              placeholderTextColor={colors.textSecondary}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -101,101 +115,102 @@ export default function SignIn() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  content: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 48,
-  },
-  appIcon: {
-    width: 80,
-    height: 80,
-    backgroundColor: '#3B82F6' + '15',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  appIconText: {
-    fontSize: 40,
-    textAlign: 'center',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  form: {
-    marginBottom: 32,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginBottom: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    paddingVertical: 12,
-    color: '#111827',
-  },
-  button: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  link: {
-    marginLeft: 4,
-  },
-  linkText: {
-    fontSize: 16,
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  boltLogo: {
-    marginTop: 40,
-  },
-});
+function createStyles(colors: any) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      flex: 1,
+      padding: 24,
+      justifyContent: 'center',
+    },
+    header: {
+      alignItems: 'center',
+      marginBottom: 48,
+    },
+    appIcon: {
+      width: 80,
+      height: 80,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 24,
+    },
+    appIconImage: {
+      width: 56,
+      height: 56,
+    },
+    title: {
+      fontSize: 28,
+      fontWeight: '700',
+      color: colors.text,
+      marginTop: 16,
+      marginBottom: 8,
+    },
+    subtitle: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: 'center',
+    },
+    form: {
+      marginBottom: 32,
+    },
+    inputContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      marginBottom: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    inputIcon: {
+      marginRight: 12,
+    },
+    input: {
+      flex: 1,
+      fontSize: 16,
+      paddingVertical: 12,
+      color: colors.text,
+    },
+    button: {
+      backgroundColor: colors.primary,
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: 'center',
+      marginTop: 8,
+    },
+    buttonDisabled: {
+      opacity: 0.6,
+    },
+    buttonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    footer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    footerText: {
+      fontSize: 16,
+      color: colors.textSecondary,
+    },
+    link: {
+      marginLeft: 4,
+    },
+    linkText: {
+      fontSize: 16,
+      color: colors.primary,
+      fontWeight: '600',
+    },
+    boltLogo: {
+      marginTop: 40,
+    },
+  });
+}

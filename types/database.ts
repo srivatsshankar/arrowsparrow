@@ -140,6 +140,8 @@ export interface Database {
           upload_id: string;
           point_text: string;
           importance_level: number;
+          audio_file_url?: string | null;
+          audio_duration?: number | null;
           created_at: string;
         };
         Insert: {
@@ -147,6 +149,8 @@ export interface Database {
           upload_id: string;
           point_text: string;
           importance_level: number;
+          audio_file_url?: string | null;
+          audio_duration?: number | null;
           created_at?: string;
         };
         Update: {
@@ -154,6 +158,8 @@ export interface Database {
           upload_id?: string;
           point_text?: string;
           importance_level?: number;
+          audio_file_url?: string | null;
+          audio_duration?: number | null;
           created_at?: string;
         };
       };

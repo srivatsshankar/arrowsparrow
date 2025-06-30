@@ -16,5 +16,5 @@
 - [ ] Upgrade UI for desktop as well
 - [x] Streaming audio
 - [x] Sorting by date
-- [ ] Multi-select deletion
+- [x] Multi-select deletion
 - [ ] Infinite scrolling

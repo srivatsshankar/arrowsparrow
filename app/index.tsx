@@ -22,10 +22,11 @@ import { useRecording } from '@/contexts/RecordingContext';
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings, Headphones, Pause, Play, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Folder, Circle, Trash2 } from 'lucide-react-native';
+import { Upload, Mic, FileText, Square, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, Loader, X, Plus, Menu, User, LogOut, Settings, Headphones, Pause, Play, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Folder, Circle, Trash2, RotateCcw } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import BoltLogo from '@/components/BoltLogo';
+import FrontPage from '@/components/FrontPage';
 
 type Upload = Database['public']['Tables']['uploads']['Row'];
 type UploadWithData = Upload & {
@@ -35,9 +36,46 @@ type UploadWithData = Upload & {
   key_points?: Array<{ point_text: string; importance_level: number }>;
 };
 
-export default function LibraryScreen() {
-  const { user, signOut } = useAuth();
+export default function IndexScreen() {
+  const { user, loading } = useAuth();
+
+  // Show loading state while checking authentication
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  // Show front page if not authenticated, library if authenticated
+  return user ? <LibraryScreen /> : <FrontPage />;
+}
+
+function LoadingScreen() {
   const { colors } = useTheme();
+  
+  const loadingStyles = StyleSheet.create({
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: colors.background,
+    },
+    loadingText: {
+      marginTop: 16,
+      fontSize: 16,
+      color: colors.textSecondary,
+    },
+  });
+  
+  return (
+    <View style={loadingStyles.loadingContainer}>
+      <Loader size={32} color={colors.primary} />
+      <Text style={loadingStyles.loadingText}>Loading...</Text>
+    </View>
+  );
+}
+
+function LibraryScreen() {
+  const { user, signOut } = useAuth();
+  const { colors, isDarkMode } = useTheme();
   const { 
     isRecording, 
     startRecording, 
@@ -79,6 +117,9 @@ export default function LibraryScreen() {
   // Multi-select state
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedUploads, setSelectedUploads] = useState<Set<string>>(new Set());
+  
+  // Delete confirmation state
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   
   // Animation values for modal
   const [modalOpacity] = useState(new Animated.Value(0));
@@ -487,78 +528,168 @@ export default function LibraryScreen() {
 
   // Multi-select functions
   const toggleSelectionMode = () => {
+    console.log('Toggle selection mode, current state:', isSelectionMode);
     setIsSelectionMode(!isSelectionMode);
     setSelectedUploads(new Set());
   };
 
   const toggleUploadSelection = (uploadId: string) => {
+    console.log('Toggle upload selection for:', uploadId);
     const newSelection = new Set(selectedUploads);
     if (newSelection.has(uploadId)) {
       newSelection.delete(uploadId);
     } else {
       newSelection.add(uploadId);
     }
+    console.log('New selection:', Array.from(newSelection));
     setSelectedUploads(newSelection);
   };
 
   const selectAllUploads = () => {
+    console.log('Select all uploads pressed, current selection size:', selectedUploads.size, 'total uploads:', uploads.length);
     if (selectedUploads.size === uploads.length) {
+      console.log('Deselecting all uploads');
       setSelectedUploads(new Set());
     } else {
-      setSelectedUploads(new Set(uploads.map(upload => upload.id)));
+      const allIds = new Set(uploads.map(upload => upload.id));
+      console.log('Selecting all uploads:', Array.from(allIds));
+      setSelectedUploads(allIds);
     }
   };
 
   const deleteSelectedUploads = async () => {
-    if (selectedUploads.size === 0) return;
+    console.log('=== DELETE FUNCTION CALLED ===');
+    console.log('Selected uploads count:', selectedUploads.size);
+    
+    if (selectedUploads.size === 0) {
+      console.log('No uploads selected, returning early');
+      return;
+    }
 
-    Alert.alert(
-      'Delete Uploads',
-      `Are you sure you want to delete ${selectedUploads.size} upload${selectedUploads.size > 1 ? 's' : ''}? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete files from storage first
-              const uploadIds = Array.from(selectedUploads);
-              const uploadsToDelete = uploads.filter(upload => uploadIds.includes(upload.id));
-              
-              for (const upload of uploadsToDelete) {
-                // Extract file path from URL
-                const url = new URL(upload.file_url);
-                const filePath = url.pathname.split('/').pop();
-                if (filePath) {
-                  await supabase.storage
-                    .from('uploads')
-                    .remove([`${user?.id}/${filePath}`]);
-                }
-              }
+    console.log('Showing confirmation dialog...');
+    setShowDeleteConfirmation(true);
+  };
 
-              // Delete database records
-              const { error } = await supabase
-                .from('uploads')
-                .delete()
-                .in('id', uploadIds);
-
-              if (error) throw error;
-
-              // Update local state
-              setUploads(prev => prev.filter(upload => !selectedUploads.has(upload.id)));
-              setSelectedUploads(new Set());
-              setIsSelectionMode(false);
-
-              Alert.alert('Success', `${uploadIds.length} upload${uploadIds.length > 1 ? 's' : ''} deleted successfully`);
-            } catch (error) {
-              console.error('Error deleting uploads:', error);
-              Alert.alert('Error', 'Failed to delete some uploads');
+  const confirmDelete = async () => {
+    console.log('=== USER CONFIRMED DELETION ===');
+    setShowDeleteConfirmation(false);
+    
+    try {
+      console.log('Starting deletion process for uploads:', Array.from(selectedUploads));
+      
+      const uploadIds = Array.from(selectedUploads);
+      const uploadsToDelete = uploads.filter(upload => uploadIds.includes(upload.id));
+      
+      console.log('Found uploads to delete:', uploadsToDelete.length);
+      console.log('Upload details:', uploadsToDelete.map(u => ({ id: u.id, name: u.file_name, userId: u.user_id })));
+      
+      // Verify all uploads belong to the current user
+      const invalidUploads = uploadsToDelete.filter(upload => upload.user_id !== user?.id);
+      if (invalidUploads.length > 0) {
+        console.error('Invalid uploads found:', invalidUploads);
+        throw new Error('You do not have permission to delete some of these items');
+      }
+      console.log('User ownership verified ✓');
+      
+      // Step 1: Delete files from storage
+      console.log('=== STEP 1: DELETING FILES FROM STORAGE ===');
+      for (const upload of uploadsToDelete) {
+        try {
+          // Extract file path from URL - handle both full URLs and file paths
+          let filePath = '';
+          if (upload.file_url.startsWith('http')) {
+            const url = new URL(upload.file_url);
+            // Get the full path after the bucket name
+            const pathParts = url.pathname.split('/');
+            const bucketIndex = pathParts.indexOf('uploads');
+            if (bucketIndex !== -1 && bucketIndex + 1 < pathParts.length) {
+              filePath = pathParts.slice(bucketIndex + 1).join('/');
             }
+          } else {
+            // If it's already a file path, use it directly
+            filePath = upload.file_url;
           }
+          
+          console.log(`Attempting to delete file: ${filePath} for upload: ${upload.id}`);
+          
+          if (filePath) {
+            const { error: storageError } = await supabase.storage
+              .from('uploads')
+              .remove([filePath]);
+            
+            if (storageError) {
+              console.warn(`Error deleting file ${filePath}:`, storageError);
+              // Continue with database deletion even if file deletion fails
+            } else {
+              console.log(`Successfully deleted file: ${filePath}`);
+            }
+          } else {
+            console.warn(`No file path found for upload: ${upload.id}`);
+          }
+        } catch (fileError) {
+          console.warn(`Error processing file deletion for upload ${upload.id}:`, fileError);
+          // Continue with database deletion even if file deletion fails
         }
-      ]
-    );
+      }
+      console.log('Storage deletion phase completed');
+
+      // Step 2: Delete main upload records (CASCADE with new DELETE policies will handle related records)
+      console.log('=== STEP 2: DELETING DATABASE RECORDS ===');
+      console.log('Deleting main upload records for IDs:', uploadIds);
+      
+      const { data: deletedData, error } = await supabase
+        .from('uploads')
+        .delete()
+        .in('id', uploadIds)
+        .select('id'); // Return the deleted IDs for confirmation
+
+      if (error) {
+        console.error('Database deletion error:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        throw error;
+      }
+
+      console.log('Database deletion successful!');
+      console.log('Deleted records:', deletedData);
+      console.log('Number of records deleted:', deletedData?.length || 0);
+
+      // Step 3: Update local state
+      console.log('=== STEP 3: UPDATING LOCAL STATE ===');
+      const initialUploadCount = uploads.length;
+      setUploads(prev => prev.filter(upload => !selectedUploads.has(upload.id)));
+      setSelectedUploads(new Set());
+      setIsSelectionMode(false);
+      console.log(`Local state updated. Uploads before: ${initialUploadCount}, uploads after filter: ${uploads.filter(upload => !selectedUploads.has(upload.id)).length}`);
+
+      // Step 4: Deletion completed successfully
+      console.log('=== DELETION COMPLETED SUCCESSFULLY ===');
+      
+    } catch (error) {
+      console.error('=== DELETION FAILED ===');
+      console.error('Error deleting uploads:', error);
+      console.error('Error type:', typeof error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      
+      let errorMessage = 'Failed to delete uploads. Please try again.';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null && 'message' in error) {
+        errorMessage = (error as any).message;
+      }
+      
+      if (Platform.OS === 'web') {
+        alert(errorMessage);
+      } else {
+        Alert.alert('Error', errorMessage);
+      }
+    }
+  };
+
+  const cancelDelete = () => {
+    console.log('User cancelled deletion');
+    setShowDeleteConfirmation(false);
   };
 
   useEffect(() => {
@@ -920,8 +1051,24 @@ export default function LibraryScreen() {
               </View>
             )}
 
-            <View style={styles.tapHint}>
-              <Text style={styles.tapHintText}>Tap to view full content</Text>
+            {/* Bottom Action Row */}
+            <View style={styles.bottomActionRow}>
+              {/* Recap Button */}
+              <TouchableOpacity
+                style={styles.recapButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  router.push(`./recap?uploadId=${upload.id}`);
+                }}
+                activeOpacity={0.8}
+              >
+                <RotateCcw size={16} color="#000000" />
+                <Text style={styles.recapButtonText}>Recap</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.tapHint} activeOpacity={0.6}>
+                <Text style={styles.tapHintText}>Tap to view full content</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -965,10 +1112,15 @@ export default function LibraryScreen() {
         {/* Top Navigation Bar */}
         <View style={styles.topBar}>
           <View style={styles.logoContainer}>
-            {/* App Icon - For now using a styled placeholder, replace with actual icon */}
-            <View style={styles.appIconContainer}>
-              <Text style={styles.appIconText}>🏹</Text>
-            </View>
+            {/* App Icon */}
+            <Image 
+              source={isDarkMode 
+                ? require('@/assets/app-icon/app-icon-dark.png')
+                : require('@/assets/app-icon/app-icon-light.png')
+              }
+              style={styles.appIcon}
+              resizeMode="contain"
+            />
           </View>
           
           <View style={styles.topBarActions}>
@@ -1070,7 +1222,10 @@ export default function LibraryScreen() {
             {selectedUploads.size > 0 && (
               <TouchableOpacity
                 style={styles.deleteButton}
-                onPress={deleteSelectedUploads}
+                onPress={() => {
+                  console.log('Delete button pressed, selected uploads:', Array.from(selectedUploads));
+                  deleteSelectedUploads();
+                }}
                 activeOpacity={0.7}
               >
                 <Trash2 size={16} color="#FFFFFF" />
@@ -1513,6 +1668,37 @@ export default function LibraryScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteConfirmation}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={cancelDelete}
+      >
+        <View style={styles.deleteModalOverlay}>
+          <View style={styles.deleteModalContent}>
+            <Text style={styles.deleteModalTitle}>Delete Recordings</Text>
+            <Text style={styles.deleteModalMessage}>
+              Are you sure you want to delete {selectedUploads.size} recording{selectedUploads.size > 1 ? 's' : ''}? This action cannot be undone.
+            </Text>
+            <View style={styles.deleteModalButtons}>
+              <TouchableOpacity
+                style={[styles.deleteModalButton, styles.deleteModalCancelButton]}
+                onPress={cancelDelete}
+              >
+                <Text style={styles.deleteModalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.deleteModalButton, styles.deleteModalConfirmButton]}
+                onPress={confirmDelete}
+              >
+                <Text style={styles.deleteModalConfirmButtonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -1556,18 +1742,10 @@ function createStyles(colors: any) {
       flexDirection: 'row',
       alignItems: 'center',
     },
-    appIconContainer: {
-      width: 48,
-      height: 48,
-      backgroundColor: colors.primary + '15',
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
+    appIcon: {
+      width: 80,
+      height: 80,
       marginRight: 12,
-    },
-    appIconText: {
-      fontSize: 24,
-      textAlign: 'center',
     },
     appInfo: {
       flex: 1,
@@ -1836,17 +2014,41 @@ function createStyles(colors: any) {
       marginTop: 4,
       opacity: 0.7,
     },
+    bottomActionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 8,
+    },
     tapHint: {
+      flex: 1,
       backgroundColor: colors.border + '40',
-      paddingVertical: 6, // Reduced from 8
-      paddingHorizontal: 10, // Reduced from 12
+      paddingVertical: 8,
+      paddingHorizontal: 12,
       borderRadius: 8,
       alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 36, // Ensure consistent height with recap button
     },
     tapHintText: {
       fontSize: 12,
       color: colors.textSecondary,
       fontWeight: '500',
+    },
+    recapButton: {
+      backgroundColor: '#FECA57', // Yellow color
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      gap: 6,
+      minHeight: 36, // Ensure consistent height with tap hint
+    },
+    recapButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: '#000000',
     },
     errorSection: {
       backgroundColor: colors.error + '15',
@@ -2411,6 +2613,63 @@ function createStyles(colors: any) {
     deleteButtonText: {
       color: '#FFFFFF',
       fontSize: 14,
+      fontWeight: '600',
+    },
+    deleteModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    deleteModalContent: {
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      padding: 24,
+      minWidth: 280,
+      maxWidth: '90%',
+    },
+    deleteModalTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 12,
+      textAlign: 'center',
+    },
+    deleteModalMessage: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginBottom: 24,
+      lineHeight: 22,
+    },
+    deleteModalButtons: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    deleteModalButton: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    deleteModalCancelButton: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    deleteModalCancelButtonText: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    deleteModalConfirmButton: {
+      backgroundColor: colors.error,
+    },
+    deleteModalConfirmButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
       fontWeight: '600',
     },
   });

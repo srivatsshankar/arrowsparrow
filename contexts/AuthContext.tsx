@@ -50,15 +50,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Redirect logic
+  // Redirect logic - Only redirect from auth pages when logged in
   useEffect(() => {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
-    if (!user && !inAuthGroup) {
-      router.replace('/(auth)/signin');
-    } else if (user && inAuthGroup) {
+    // Only redirect from auth pages when user is logged in
+    if (user && inAuthGroup) {
       // Redirect to the main library screen (index)
       router.replace('/');
     }
